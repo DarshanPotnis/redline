@@ -1,0 +1,24 @@
+repos:
+  # ruff runs through uv, so hooks use the version locked in uv.lock (same as make and CI).
+  # `unsupported` is pre-commit's current name for the old `system` language: run the entry as-is.
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: unsupported
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: unsupported
+        types_or: [python, pyi]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+        # uv.lock is ~760 KB; the 500 KB guard still covers every other file.
+        exclude: ^uv\.lock$

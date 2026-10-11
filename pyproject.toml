@@ -1,0 +1,47 @@
+[project]
+name = "redline"
+version = "0.1.0"
+description = "Adaptive measurement engine that finds where LLM reasoning breaks, with error bars."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Darshan Potnis" }]
+requires-python = ">=3.12"
+dependencies = [
+    "groq>=1.7.0",
+    "inspect-ai>=0.3.278",
+    "openai>=3.29.0",
+    "reasoning-gym>=0.1.25",
+    "z3-solver>=5.1.0.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.169.0",
+    "mypy>=2.4.0",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["z3.*", "reasoning_gym.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
