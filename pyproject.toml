@@ -46,3 +46,5 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["--strict-markers"]
+markers = ["slow: levels 5-7 generation; skipped by `make test`, run by `make test-all` and CI"]

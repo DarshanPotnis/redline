@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from redline.puzzles.logic_grid import LADDER, generate, render
+from redline.puzzles.logic_grid import generate, render
 from redline.puzzles.logic_grid.model import (
     AtClue,
     Clue,
@@ -20,7 +20,7 @@ from redline.puzzles.logic_grid.model import (
 )
 from redline.puzzles.logic_grid.render import clue_sentence
 
-levels = st.sampled_from(sorted(LADDER))
+levels = st.sampled_from([1, 2, 3, 4])  # the fast levels; 5-7 are covered by slow tests
 seeds = st.integers(min_value=0, max_value=2**32 - 1)
 
 

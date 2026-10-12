@@ -87,6 +87,15 @@ Clue = Annotated[
     | NextToClue,
     Field(discriminator="kind"),
 ]
+CLUE_KINDS: tuple[str, ...] = (
+    "at",
+    "not_at",
+    "same_house",
+    "not_same_house",
+    "left_of",
+    "immediately_left",
+    "next_to",
+)
 
 
 def clue_refs(clue: Clue) -> tuple[Ref, Ref]:
@@ -169,7 +178,8 @@ class LogicGridPuzzle(_Frozen):
         return self
 
     def to_instance(self) -> PuzzleInstance:
-        # Imported here because render imports this module.
+        # Imported here because both modules import this one.
+        from redline.puzzles.logic_grid.difficulty import measure, method
         from redline.puzzles.logic_grid.render import render
 
         return PuzzleInstance(
@@ -178,6 +188,10 @@ class LogicGridPuzzle(_Frozen):
             seed=self.seed,
             text=render(self),
             answer=self.solution.model_dump(mode="json"),
-            instance=self.model_dump(mode="json", include={"spec", "clues"}),
+            instance={
+                **self.model_dump(mode="json", include={"spec", "clues"}),
+                "features_method": method(),
+            },
             search_space=self.spec.search_space,
+            features=measure(self),
         )

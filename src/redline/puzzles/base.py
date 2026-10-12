@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 
 class PuzzleInstance(BaseModel):
@@ -18,6 +18,8 @@ class PuzzleInstance(BaseModel):
     answer: dict[str, JsonValue]
     instance: dict[str, JsonValue]
     search_space: int
+    # Difficulty features; empty for generators that have none (e.g. Reasoning Gym).
+    features: dict[str, float] = Field(default_factory=dict)
 
 
 class PuzzleGenerator(Protocol):

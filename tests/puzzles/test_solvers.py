@@ -1,6 +1,8 @@
-"""Backtracking against the brute-force oracle on random clue sets, plus solver edge cases."""
+"""Three independent counters (brute force, backtracking, Z3) agree on random clue sets, plus
+solver edge cases."""
 
 import random
+from collections.abc import Callable
 
 import pytest
 from hypothesis import given
@@ -22,10 +24,12 @@ from redline.puzzles.logic_grid.model import (
 )
 from redline.puzzles.logic_grid.solve_backtrack import count_solutions
 from redline.puzzles.logic_grid.solve_bruteforce import count_solutions_bruteforce
+from redline.puzzles.logic_grid.solve_z3 import count_solutions_z3
 from redline.puzzles.logic_grid.vocab import VOCAB
 
 HOUSE_KINDS = [AtClue, NotAtClue]
 PAIR_KINDS = [SameHouseClue, NotSameHouseClue, LeftOfClue, ImmediatelyLeftClue, NextToClue]
+Z3_CAP = 50  # every Z3 comparison counts to at most 50
 
 
 @st.composite
@@ -42,10 +46,10 @@ def any_clue(draw: st.DrawFn, spec: Spec) -> Clue:
 
 
 @st.composite
-def clue_sets(draw: st.DrawFn) -> tuple[Spec, list[Clue]]:
+def clue_sets(draw: st.DrawFn, levels: tuple[int, ...] = (1, 2, 3)) -> tuple[Spec, list[Clue]]:
     """Random subsets of one solution's true clues plus a few arbitrary ones (0, 1 or many
-    solutions), at the levels the brute-force oracle can handle."""
-    level = draw(st.sampled_from([1, 2, 3]))
+    solutions). The default levels are the ones the brute-force oracle can handle."""
+    level = draw(st.sampled_from(levels))
     rng = random.Random(draw(st.integers(min_value=0, max_value=2**32 - 1)))
     spec = draw_spec(rng, level)
     pool = true_clues(spec, draw_solution(rng, spec))
@@ -66,10 +70,30 @@ def test_cap_stops_the_count(case: tuple[Spec, list[Clue]], cap: int) -> None:
     assert count_solutions(spec, clues, cap=cap) == min(cap, count_solutions(spec, clues))
 
 
+@given(clue_sets(levels=(1, 2, 3, 4)))
+def test_z3_matches_backtracking(case: tuple[Spec, list[Clue]]) -> None:
+    spec, clues = case
+    # Backtracking is capped too: uncapped, it can enumerate all 331,776 level-4 candidates, and
+    # count_solutions(cap=c) == min(c, full count) is tested above.
+    assert count_solutions_z3(spec, clues, cap=Z3_CAP) == count_solutions(spec, clues, cap=Z3_CAP)
+
+
+@given(clue_sets())
+def test_z3_matches_brute_force(case: tuple[Spec, list[Clue]]) -> None:
+    spec, clues = case
+    expected = min(Z3_CAP, count_solutions_bruteforce(spec, clues))
+    assert count_solutions_z3(spec, clues, cap=Z3_CAP) == expected
+
+
 @pytest.mark.parametrize("level", [1, 2])
 def test_no_clues_count_the_whole_search_space(level: int) -> None:
     spec = draw_spec(random.Random(0), level)
     assert count_solutions(spec, []) == count_solutions_bruteforce(spec, []) == spec.search_space
+
+
+def test_z3_without_clues_counts_the_whole_search_space() -> None:
+    spec = draw_spec(random.Random(0), 1)
+    assert count_solutions_z3(spec, []) == spec.search_space == 36
 
 
 def test_brute_force_refuses_large_search_spaces() -> None:
@@ -79,14 +103,16 @@ def test_brute_force_refuses_large_search_spaces() -> None:
         count_solutions_bruteforce(spec, [])
 
 
-def test_cap_must_be_positive() -> None:
+@pytest.mark.parametrize("counter", [count_solutions, count_solutions_z3])
+def test_cap_must_be_positive(counter: Callable[..., int]) -> None:
     spec = draw_spec(random.Random(0), 1)
     with pytest.raises(ValueError, match="cap"):
-        count_solutions(spec, [], cap=0)
+        counter(spec, [], cap=0)
 
 
-def test_unknown_ref_is_rejected() -> None:
+@pytest.mark.parametrize("counter", [count_solutions, count_solutions_z3])
+def test_unknown_ref_is_rejected(counter: Callable[..., int]) -> None:
     spec = draw_spec(random.Random(0), 1)
     clue = AtClue(ref=Ref(attribute="pet", value="unicorn"), house=1)
     with pytest.raises(ValueError, match="unicorn"):
-        count_solutions(spec, [clue])
+        counter(spec, [clue])

@@ -24,11 +24,13 @@ All code lives in `src/redline/`.
 | `make format` | `ruff check --fix` + `ruff format` (auto-fix) |
 | `make lint` | `ruff check` + `ruff format --check` |
 | `make typecheck` | `mypy` (strict, on `src/`) |
-| `make test` | `pytest` |
-| `make check` | lint + typecheck + test (same gates as CI) |
+| `make test` | `pytest -m "not slow"` (skips the level 5-7 tests) |
+| `make test-all` | `pytest`, slow tests included (what CI runs) |
+| `make check` | lint + typecheck + test (CI runs the same gates, plus the slow tests) |
 | `make smoke` | `inspect eval` of the smoke task on `mockllm/model` |
 | `make view` | `inspect view` (log viewer) |
 | `make puzzle LEVEL=3 SEED=7` | Print a logic-grid puzzle and its answer grid |
+| `make difficulty-report` | Regenerate `reports/difficulty_ladder.md` (about a minute) |
 
 ## Models
 
@@ -39,12 +41,14 @@ All code lives in `src/redline/`.
 
 - **Phase 0: setup** (done)
 - **Phase 1: first curve (CURRENT).** One logic-grid generator with a brute-force uniqueness check, one Reasoning Gym task, two strategies (direct; Z3-translate via a JSON constraint format we compile ourselves, so no model-written code runs yet), the local Qwen 3.5 sizes plus one Groq model, a fixed difficulty ladder, Parquet export, one accuracy-vs-difficulty chart. Phase 1 is where pandas, pyarrow, duckdb, and jupyter come in.
-  - **1a (CURRENT):** logic-grid generator.
-  - **1b:** Z3 solver + per-puzzle difficulty score, unlocking levels 5-6.
+  - **1a:** logic-grid generator (done).
+  - **1b (CURRENT):** Z3 solver + per-puzzle difficulty features; the ladder becomes levels 1-7.
   - **1c:** Inspect task + verifier + direct strategy.
   - **1d:** Z3-translate strategy + misread diagnosis.
   - **1e:** Reasoning Gym adapter, ladder runner, Parquet export, first chart, first real run.
   - Generated logic-grid puzzles are fully relational by design: `at` clues are excluded from the generator's candidate pool, but `at` stays in the clue schema for the 1d translations.
+  - The generator counts solutions with backtracking up to a search space of 1,000,000 (levels 1-4) and with Z3 above it. Every counter is exact and the generator only branches on "count == 1", so the counter never changes a puzzle.
+  - Difficulty features come from `difficulty.measure()`: K=5 Z3 uniqueness proofs, each in a fresh `z3.Context` (a shared context leaks state between runs and makes the statistics irreproducible). Set Z3 options with `solver.set(...)`, never `z3.set_param`.
 - **Phase 2: agentic strategies** (code execution in Inspect's Docker sandbox, `react()` agent), budget caps, caching.
 - **Phase 3: adaptive controller** (staircase, then IRT), breaking points with bootstrapped error bars.
 - **Phase 4:** more generators, a static dashboard (DuckDB-WASM), a write-up.

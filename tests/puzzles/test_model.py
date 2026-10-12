@@ -5,10 +5,10 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import TypeAdapter, ValidationError
 
-from redline.puzzles.logic_grid import LADDER, LogicGridPuzzle, generate
-from redline.puzzles.logic_grid.model import Clue, NotAtClue, Ref, Solution, Spec
+from redline.puzzles.logic_grid import LogicGridPuzzle, generate
+from redline.puzzles.logic_grid.model import CLUE_KINDS, Clue, NotAtClue, Ref, Solution, Spec
 
-levels = st.sampled_from(sorted(LADDER))
+levels = st.sampled_from([1, 2, 3, 4])  # the fast levels; 5-7 are covered by slow tests
 seeds = st.integers(min_value=0, max_value=2**32 - 1)
 CLUE = TypeAdapter(Clue)
 KINDS = [
@@ -38,6 +38,7 @@ def test_clue_schema_discriminates_on_the_seven_kinds() -> None:
     schema = CLUE.json_schema()
     assert schema["discriminator"]["propertyName"] == "kind"
     assert sorted(schema["discriminator"]["mapping"]) == sorted(KINDS)
+    assert sorted(CLUE_KINDS) == sorted(KINDS)
 
 
 CAT = '{"attribute": "pet", "value": "cat"}'
