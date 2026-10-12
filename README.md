@@ -2,7 +2,7 @@
 
 Redline finds where LLM reasoning breaks. It generates fresh, machine-verifiable puzzles at a controllable difficulty and runs several solving strategies on them: direct answer, code, Z3 translation and a tool-using agent, all under equal token budgets. It then adaptively picks the next difficulty to locate each model+strategy's breaking point, with error bars, in as few model calls as possible. Every puzzle is new and checked by a verifier, so a score cannot come from a memorized test item.
 
-**Status:** Phase 0: setup. The scaffolding, quality gates and CI are in place. There is no measurement code yet.
+**Status:** Phase 1 in progress (1a: logic-grid generator). Puzzles generate and verify; there are no strategies or measurements yet.
 
 ## Quickstart
 

@@ -2720,6 +2720,7 @@ dependencies = [
     { name = "groq" },
     { name = "inspect-ai" },
     { name = "openai" },
+    { name = "pydantic" },
     { name = "reasoning-gym" },
     { name = "z3-solver" },
 ]
@@ -2738,6 +2739,7 @@ requires-dist = [
     { name = "groq", specifier = ">=1.7.0" },
     { name = "inspect-ai", specifier = ">=0.3.278" },
     { name = "openai", specifier = ">=3.29.0" },
+    { name = "pydantic", specifier = ">=2.14.1" },
     { name = "reasoning-gym", specifier = ">=0.1.25" },
     { name = "z3-solver", specifier = ">=5.1.0.0" },
 ]

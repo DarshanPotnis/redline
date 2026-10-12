@@ -1,4 +1,7 @@
-.PHONY: setup format lint typecheck test check smoke view
+.PHONY: setup format lint typecheck test check smoke view puzzle
+
+LEVEL ?= 3
+SEED ?= 0
 
 setup:
 	uv sync
@@ -25,3 +28,6 @@ smoke:
 
 view:
 	uv run inspect view
+
+puzzle:
+	uv run python -m redline.puzzles.logic_grid --level $(LEVEL) --seed $(SEED)
