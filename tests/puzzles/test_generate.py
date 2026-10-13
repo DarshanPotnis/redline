@@ -13,11 +13,12 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from redline.puzzles.base import PuzzleInstance
+from redline.puzzles.base import PublicPuzzle, PuzzleInstance
 from redline.puzzles.logic_grid import GENERATOR, LADDER, LogicGridPuzzle, generate, render
 from redline.puzzles.logic_grid.clues import holds
 from redline.puzzles.logic_grid.difficulty import method
 from redline.puzzles.logic_grid.generate import default_counter, draw_spec
+from redline.puzzles.logic_grid.render import answer_format
 from redline.puzzles.logic_grid.solve_backtrack import count_solutions
 from redline.puzzles.logic_grid.solve_bruteforce import count_solutions_bruteforce
 from redline.puzzles.logic_grid.solve_z3 import count_solutions_z3
@@ -141,9 +142,10 @@ def test_generation_ignores_the_string_hash_seed() -> None:
 
 
 def identity_json(instance: PuzzleInstance) -> str:
-    """The instance minus its difficulty features: Z3 statistics may differ across platforms."""
+    """The puzzle's identity: the instance minus its difficulty features (Z3 statistics may
+    differ across platforms) and its answer format (pinned on its own in test_render.py)."""
     return instance.model_dump_json(
-        exclude={"features": True, "instance": {"features_method": True}}
+        exclude={"features": True, "answer_format": True, "instance": {"features_method": True}}
     )
 
 
@@ -186,6 +188,10 @@ def test_instance_holds_text_key_hidden_puzzle_and_features(level: int, seed: in
     assert instance.generator == "logic_grid"
     assert (instance.level, instance.seed) == (level, seed)
     assert instance.text == render(p)
+    assert instance.answer_format == answer_format(p.spec)
+    assert instance.public() == PublicPuzzle(
+        text=instance.text, answer_format=answer_format(p.spec)
+    )
     assert instance.answer == p.solution.model_dump(mode="json")
     assert list(instance.instance) == ["spec", "clues", "features_method"]
     assert instance.instance["features_method"] == method()

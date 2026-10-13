@@ -1,6 +1,7 @@
 """Natural-language rendering, ZebraLogic style.
 
-Puzzle statement only: answer-format instructions belong to the strategies.
+`render` is the puzzle statement; `answer_format` describes the answer's shape from the spec
+alone, so it reveals nothing. Instructions such as "reason step by step" belong to strategies.
 """
 
 from typing import assert_never
@@ -16,6 +17,7 @@ from redline.puzzles.logic_grid.model import (
     NotSameHouseClue,
     Ref,
     SameHouseClue,
+    Spec,
 )
 from redline.puzzles.logic_grid.vocab import ATTRIBUTES
 
@@ -36,6 +38,19 @@ def render(puzzle: LogicGridPuzzle) -> str:
             "Clues:",
             *(f"{n}. {clue_sentence(clue)}" for n, clue in enumerate(puzzle.clues, start=1)),
         ]
+    )
+
+
+def answer_format(spec: Spec) -> str:
+    """How to write the answer: keys and a template with "..." placeholders, never values."""
+    quoted = [f'"{name}"' for name in spec.attribute_names]
+    row = "{" + ", ".join(f'{name}: "..."' for name in quoted) + "}"
+    template = ",\n".join(f'  "{house}": {row}' for house in range(1, spec.houses + 1))
+    return (
+        f'Give your answer as a JSON object with one key per house, "1" to "{spec.houses}". '
+        f"Each value is an object with every attribute: {', '.join(quoted)}. "
+        "Use each value exactly as it is listed in the puzzle. Template:\n"
+        "{\n" + template + "\n}"
     )
 
 

@@ -17,8 +17,9 @@ from redline.puzzles.logic_grid.model import (
     NotSameHouseClue,
     Ref,
     SameHouseClue,
+    Spec,
 )
-from redline.puzzles.logic_grid.render import clue_sentence
+from redline.puzzles.logic_grid.render import answer_format, clue_sentence
 
 levels = st.sampled_from([1, 2, 3, 4])  # the fast levels; 5-7 are covered by slow tests
 seeds = st.integers(min_value=0, max_value=2**32 - 1)
@@ -66,3 +67,29 @@ RED = Ref(attribute="color", value="red")
 )
 def test_clue_sentences(clue: Clue, sentence: str) -> None:
     assert clue_sentence(clue) == sentence
+
+
+def test_answer_format_is_pinned() -> None:
+    spec = Spec(
+        houses=3, attributes=(("name", ("Alice", "Bob", "Carol")), ("pet", ("cat", "dog", "fish")))
+    )
+    assert answer_format(spec) == (
+        'Give your answer as a JSON object with one key per house, "1" to "3". Each value is an '
+        'object with every attribute: "name", "pet". Use each value exactly as it is listed in '
+        "the puzzle. Template:\n"
+        "{\n"
+        '  "1": {"name": "...", "pet": "..."},\n'
+        '  "2": {"name": "...", "pet": "..."},\n'
+        '  "3": {"name": "...", "pet": "..."}\n'
+        "}"
+    )
+
+
+@given(levels, seeds)
+def test_answer_format_names_no_value(level: int, seed: int) -> None:
+    # The format is public: it may name houses and attributes, never a value.
+    spec = generate(level, seed).spec
+    text = answer_format(spec).casefold()
+    for _, values in spec.attributes:
+        for value in values:
+            assert not re.search(rf"\b{re.escape(value.casefold())}\b", text), value

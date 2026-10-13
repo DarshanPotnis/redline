@@ -180,13 +180,14 @@ class LogicGridPuzzle(_Frozen):
     def to_instance(self) -> PuzzleInstance:
         # Imported here because both modules import this one.
         from redline.puzzles.logic_grid.difficulty import measure, method
-        from redline.puzzles.logic_grid.render import render
+        from redline.puzzles.logic_grid.render import answer_format, render
 
         return PuzzleInstance(
             generator=GENERATOR_NAME,
             level=self.level,
             seed=self.seed,
             text=render(self),
+            answer_format=answer_format(self.spec),
             answer=self.solution.model_dump(mode="json"),
             instance={
                 **self.model_dump(mode="json", include={"spec", "clues"}),

@@ -65,6 +65,13 @@ def test_solver_effort_rises_across_levels_1_to_4() -> None:
 def test_features_default_to_empty() -> None:
     # Generators without difficulty features (e.g. Reasoning Gym) leave the field out.
     instance = PuzzleInstance(
-        generator="other", level=1, seed=0, text="", answer={}, instance={}, search_space=1
+        generator="other",
+        level=1,
+        seed=0,
+        text="",
+        answer_format="",
+        answer={},
+        instance={},
+        search_space=1,
     )
     assert instance.features == {}

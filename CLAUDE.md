@@ -9,12 +9,12 @@ All code lives in `src/redline/`.
 | Package | Responsibility |
 |---|---|
 | `puzzles` | Seeded generators; each returns puzzle text, a hidden structured instance, and the answer key |
-| `strategies` | Inspect solvers; they only ever see puzzle text |
-| `scoring` | The verifier, as an Inspect scorer |
+| `strategies` | Pure functions from a `PublicPuzzle` to chat messages; they never see `TaskState` or the answer key (AST-tested) |
+| `scoring` | The verifier, as an Inspect scorer: parses the model's grid, grades it, names the broken clues |
 | `controller` | The adaptive difficulty loop |
 | `stats` | Breaking-point fits and error bars |
 | `export` | Inspect logs to Parquet |
-| `tasks` | Inspect task definitions (`tasks/smoke.py` is the Phase 0 pipeline check) |
+| `tasks` | Inspect task definitions (`logic_grid.py`; `smoke.py` is the Phase 0 pipeline check) and `solver.py`, the only code that touches `TaskState` |
 
 ## Commands
 
@@ -28,6 +28,7 @@ All code lives in `src/redline/`.
 | `make test-all` | `pytest`, slow tests included (what CI runs) |
 | `make check` | lint + typecheck + test (CI runs the same gates, plus the slow tests) |
 | `make smoke` | `inspect eval` of the smoke task on `mockllm/model` |
+| `make eval-mock` | `inspect eval` of the logic-grid task on `mockllm/model`, once per strategy |
 | `make view` | `inspect view` (log viewer) |
 | `make puzzle LEVEL=3 SEED=7` | Print a logic-grid puzzle and its answer grid |
 | `make difficulty-report` | Regenerate `reports/difficulty_ladder.md` (about a minute) |
@@ -42,8 +43,8 @@ All code lives in `src/redline/`.
 - **Phase 0: setup** (done)
 - **Phase 1: first curve (CURRENT).** One logic-grid generator with a brute-force uniqueness check, one Reasoning Gym task, two strategies (direct; Z3-translate via a JSON constraint format we compile ourselves, so no model-written code runs yet), the local Qwen 3.5 sizes plus one Groq model, a fixed difficulty ladder, Parquet export, one accuracy-vs-difficulty chart. Phase 1 is where pandas, pyarrow, duckdb, and jupyter come in.
   - **1a:** logic-grid generator (done).
-  - **1b (CURRENT):** Z3 solver + per-puzzle difficulty features; the ladder becomes levels 1-7.
-  - **1c:** Inspect task + verifier + direct strategy.
+  - **1b:** Z3 solver + per-puzzle difficulty features; the ladder becomes levels 1-7 (done).
+  - **1c (CURRENT):** Inspect task + verifier + direct and cot strategies.
   - **1d:** Z3-translate strategy + misread diagnosis.
   - **1e:** Reasoning Gym adapter, ladder runner, Parquet export, first chart, first real run.
   - Generated logic-grid puzzles are fully relational by design: `at` clues are excluded from the generator's candidate pool, but `at` stays in the clue schema for the 1d translations.
@@ -58,7 +59,7 @@ All code lives in `src/redline/`.
 - **Zero-cost project: no paid API calls, ever.** Experiments use local models through Ollama or free API tiers. Never run an eval against a real model without asking first.
 - Build only what the current phase asks. Ask before adding a dependency.
 - Brute force first, optimize second; keep the brute-force version as a test oracle.
-- Answer keys never reach a strategy; strategies receive puzzle text only.
+- Answer keys never reach a strategy: strategies receive only a `PublicPuzzle` (puzzle text + answer format), and an AST test enforces it.
 - Generators are seeded and deterministic: same (difficulty, seed) gives the same puzzle. Use a local `random.Random(seed)`, and never iterate an unsorted set of strings (string hashing varies per process).
 - Every generator gets Hypothesis property tests: exactly one solution; the key satisfies every clue.
 - Each level strictly increases the search space. Per-puzzle solver effort is recorded (from 1b) and must rise on average across levels; individual puzzles may vary.

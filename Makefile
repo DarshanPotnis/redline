@@ -1,4 +1,4 @@
-.PHONY: setup format lint typecheck test test-all check smoke view puzzle difficulty-report
+.PHONY: setup format lint typecheck test test-all check smoke eval-mock view puzzle difficulty-report
 
 LEVEL ?= 3
 SEED ?= 0
@@ -29,6 +29,11 @@ check: lint typecheck test
 
 smoke:
 	uv run inspect eval src/redline/tasks/smoke.py --model mockllm/model
+
+# mockllm's default reply is not JSON, so every sample scores format_ok=0: a pipeline check.
+eval-mock:
+	uv run inspect eval src/redline/tasks/logic_grid.py --model mockllm/model -T strategy=direct
+	uv run inspect eval src/redline/tasks/logic_grid.py --model mockllm/model -T strategy=cot
 
 view:
 	uv run inspect view
