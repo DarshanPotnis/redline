@@ -1,8 +1,11 @@
-.PHONY: setup format lint typecheck test test-all check smoke eval-mock view puzzle difficulty-report ollama-models
+.PHONY: setup format lint typecheck test test-all check smoke eval-mock view puzzle difficulty-report ollama-models pilot report
 
 LEVEL ?= 3
 SEED ?= 0
 MODELFILES := $(wildcard models/ollama/*.Modelfile)
+PILOT_RUN ?= pilot-1e
+# macOS: keep the machine from idle-sleeping during long runs (closing the lid still sleeps it).
+CAFFEINATE := $(shell command -v caffeinate > /dev/null 2>&1 && echo caffeinate -i)
 
 setup:
 	uv sync
@@ -56,3 +59,15 @@ ollama-models:
 		echo "ollama create redline-$$name -f $$file"; \
 		ollama create redline-$$name -f $$file || exit 1; \
 	done
+
+# The 1e pilot: the local models on dev seeds. Resumable: rerun after a crash or sleep to go on.
+pilot:
+	$(CAFFEINATE) uv run python -m redline.runner \
+		--models ollama/redline-qwen3.5-0.8b ollama/redline-qwen3.5-2b ollama/redline-qwen3.5-4b \
+		--strategies direct cot z3_translate --levels 1-7 --n-seeds 5 --seed-start 0 \
+		--early-stop 2 --run-id $(PILOT_RUN)
+
+# Parquet export (data/runs/<RUN>/), chart and markdown report (reports/<RUN>.md) for one run.
+report:
+	@test -n "$(RUN)" || { echo "usage: make report RUN=<run_id>"; exit 2; }
+	uv run python -m redline.analysis --run-id $(RUN)

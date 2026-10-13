@@ -2,7 +2,7 @@
 
 Redline finds where LLM reasoning breaks. It generates fresh, machine-verifiable puzzles at a controllable difficulty and runs several solving strategies on them: direct answer, code, Z3 translation and a tool-using agent, all under equal token budgets. It then adaptively picks the next difficulty to locate each model+strategy's breaking point, with error bars, in as few model calls as possible. Every puzzle is new and checked by a verifier, so a score cannot come from a memorized test item.
 
-**Status:** Phase 1 in progress (1c.1: pinned model profiles, truncation-aware scoring). Puzzles run as an Inspect evaluation under logged, pinned model profiles and are graded with a per-clue diagnosis; no real measurements yet.
+**Status:** Phase 1 in progress (1e: ladder runner, Parquet export, ladder report). Puzzles run as Inspect evaluations under logged, pinned model profiles, with three budget-matched strategies and a per-clue diagnosis. A resumable runner climbs the difficulty ladder per model and strategy; the first pilot runs on dev seeds, so there are no reported results yet.
 
 ## Quickstart
 
@@ -14,6 +14,7 @@ cp .env.example .env   # fill in locally; .env is gitignored
 make check             # lint, typecheck, tests (the same gates as CI)
 make smoke             # run the smoke task on Inspect's mock model
 make view              # browse eval logs in Inspect's log viewer
+make report RUN=<id>   # Parquet export, ladder chart and report for a runner run
 ```
 
 The smoke task runs on `mockllm/model`, which always returns the same fixed reply. Its accuracy is therefore 0 by design: the task checks that the pipeline runs, not how good a model is.

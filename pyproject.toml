@@ -8,9 +8,13 @@ license-files = ["LICENSE"]
 authors = [{ name = "Darshan Potnis" }]
 requires-python = ">=3.12"
 dependencies = [
+    "duckdb>=1.5.6",
     "groq>=1.7.0",
     "inspect-ai>=0.3.278",
+    "matplotlib>=3.11.2",
     "openai>=3.29.0",
+    "pandas>=3.0.6",
+    "pyarrow>=26.0.0",
     "pydantic>=2.14.1",
     "reasoning-gym>=0.1.25",
     "z3-solver>=5.1.0.0",
@@ -41,7 +45,7 @@ strict = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["z3.*", "reasoning_gym.*"]
+module = ["z3.*", "reasoning_gym.*", "pandas.*", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

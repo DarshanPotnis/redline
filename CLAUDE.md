@@ -12,8 +12,10 @@ All code lives in `src/redline/`.
 | `strategies` | Async `run(PublicPuzzle, BudgetedModel) -> StrategyResult` (contract v2, `base.py`); they never see `TaskState` or the answer key (AST- and replay-tested) |
 | `scoring` | Inspect scorers: `grid_verifier` parses the model's grid, grades it and names the broken clues; `translation_verifier` diagnoses misreads for translating strategies |
 | `controller` | The adaptive difficulty loop |
-| `stats` | Breaking-point fits and error bars |
-| `export` | Inspect logs to Parquet |
+| `stats` | Breaking-point fits and error bars (`wilson_interval` so far) |
+| `export` | `to_parquet(run_dir)`: a run's successful logs to `data/runs/<run_id>/samples.parquet`, one row per sample |
+| `runner` | The ladder runner: one `eval_set` per (model, strategy, level) cell, high-jump early stop, resumable, `manifest.json` per run |
+| `analysis` | Per-level solved rates with Wilson intervals (DuckDB over the Parquet), the ladder chart and `reports/<run_id>.md` |
 | `tasks` | Inspect task definitions (`logic_grid.py`; `smoke.py` is the Phase 0 pipeline check) and `solver.py`, the only code that touches `TaskState` |
 | `runtime` | Model profiles (`profiles.py`): per-model budget, context window, thinking and pinned sampling, written into every eval log |
 
@@ -33,6 +35,8 @@ All code lives in `src/redline/`.
 | `make view` | `inspect view` (log viewer) |
 | `make puzzle LEVEL=3 SEED=7` | Print a logic-grid puzzle and its answer grid |
 | `make difficulty-report` | Regenerate `reports/difficulty_ladder.md` (about a minute) |
+| `make pilot` | The 1e pilot: 3 local models x 3 strategies, levels 1-7, 5 dev seeds, early stop 2, run id `pilot-1e` (resumable; under `caffeinate -i` on macOS) |
+| `make report RUN=<id>` | Parquet export, chart (`reports/figures/<id>_ladder.png`) and report (`reports/<id>.md`) for one run |
 | `make ollama-models` | Pull missing base models and (re)create `redline-*` from `models/ollama/*.Modelfile` |
 
 ## Models
@@ -44,13 +48,15 @@ All code lives in `src/redline/`.
 ## Phase plan
 
 - **Phase 0: setup** (done)
-- **Phase 1: first curve (CURRENT).** One logic-grid generator with a brute-force uniqueness check, one Reasoning Gym task, two strategies (direct; Z3-translate via a JSON constraint format we compile ourselves, so no model-written code runs yet), the local Qwen 3.5 sizes plus one Groq model, a fixed difficulty ladder, Parquet export, one accuracy-vs-difficulty chart. Phase 1 is where pandas, pyarrow, duckdb, and jupyter come in.
+- **Phase 1: first curve (CURRENT).** One logic-grid generator with a brute-force uniqueness check, one Reasoning Gym task, two strategies (direct; Z3-translate via a JSON constraint format we compile ourselves, so no model-written code runs yet), the local Qwen 3.5 sizes plus one Groq model, a fixed difficulty ladder, Parquet export, one accuracy-vs-difficulty chart. Phase 1 is where pandas, pyarrow, duckdb, and jupyter come in (1e added pandas, pyarrow, duckdb and matplotlib; pandas only at the `samples_df` boundary).
   - **1a:** logic-grid generator (done).
   - **1b:** Z3 solver + per-puzzle difficulty features; the ladder becomes levels 1-7 (done).
   - **1c:** Inspect task + verifier + direct and cot strategies (done).
   - **1c.1:** pinned model profiles + truncation-aware scoring (done).
-  - **1d (CURRENT):** budgeted strategies with budget forcing, then Z3-translate strategy + misread diagnosis.
-  - **1e:** Reasoning Gym adapter, ladder runner, Parquet export, first chart, first real run.
+  - **1d:** budgeted strategies with budget forcing, then Z3-translate strategy + misread diagnosis (done).
+  - **1e (CURRENT):** resumable ladder runner, Parquet export, ladder chart and report, local pilot run on dev seeds.
+  - **1f:** Reasoning Gym adapter.
+  - **1g:** full local and Groq runs on test seeds, findings write-up (including the misread-vs-misreasoned verdict).
   - Generated logic-grid puzzles are fully relational by design: `at` clues are excluded from the generator's candidate pool, but `at` stays in the clue schema for the 1d translations.
   - The generator counts solutions with backtracking up to a search space of 1,000,000 (levels 1-4) and with Z3 above it. Every counter is exact and the generator only branches on "count == 1", so the counter never changes a puzzle.
   - Difficulty features come from `difficulty.measure()`: K=5 Z3 uniqueness proofs, each in a fresh `z3.Context` (a shared context leaks state between runs and makes the statistics irreproducible). Set Z3 options with `solver.set(...)`, never `z3.set_param`.
@@ -65,7 +71,14 @@ All code lives in `src/redline/`.
 - Budget forcing (s1): a reasoning call may use at most what remains minus `ANSWER_RESERVE`. If it stops on `max_tokens`, exactly one forcing call follows with the rest, appending the strategy's forcing message.
 - `tasks/solver.py` builds the `PublicPuzzle` and the `BudgetedModel`, runs the strategy, and stores the final text as the output and `{artifacts, calls, budget}` in `state.metadata["strategy_run"]` for the scorer.
 - Strategies: `direct`, `cot`, and `z3_translate`. z3_translate makes the model a translator only: it writes the clues as the clue JSON (examples use placeholder names from no puzzle), Z3 solves them locally, and only a unique solution becomes an answer (unsat or ambiguous answers nothing; one attempt). `PublicPuzzle.structure` (the spec: houses, attributes, values, all already in the text) gives it the exact spellings.
-- Misread diagnosis (`translation_verifier`, z3_translate runs only): `n_wrong` = translated clues false on the true solution; `n_missed` = true clues with no canonically equal translation (refs of symmetric kinds sorted); `translation_exact` = neither. The full misread-vs-misreasoned verdict joins strategies by sample id in 1e: an exact translation plus a wrong direct answer means the model understood the clues but could not reason through them.
+- Misread diagnosis (`translation_verifier`, z3_translate runs only): `n_wrong` = translated clues false on the true solution; `n_missed` = true clues with no canonically equal translation (refs of symmetric kinds sorted); `translation_exact` = neither. The full misread-vs-misreasoned verdict joins strategies by `sample_id` in the Parquet export (1g): an exact translation plus a wrong direct answer means the model understood the clues but could not reason through them.
+
+## Ladder runner (1e)
+
+- `uv run python -m redline.runner --models ... --strategies ... --levels 1-7 --n-seeds N --seed-start S --early-stop 2 --run-id <name>`. Each (model, strategy) climbs the levels in order and stops after `early-stop` consecutive levels with solved = 0 (the high-jump rule); the stop reason (`completed`, `early_stop`, `error`) goes in the manifest.
+- Each cell is one Inspect `eval_set` with its own log dir, `logs/runs/<run_id>/<model>/<strategy>/L<level>/`. A single eval_set can't hold the run (the next level depends on the last result), but per cell it gives resume: complete logs are reused without model calls, an interrupted log finishes with its completed samples reused. Rerun the same command to resume.
+- Local models run first, one at a time: every loaded Ollama model is unloaded before a local model starts and after it finishes. API models run after.
+- `manifest.json` records the config, seed split, git SHA and dirty flag, every profile, Inspect/z3/Python versions, sessions with start and end times, and per ladder the levels run and the stop reason. A resume must match the config, commit and profiles. A dirty tree is refused unless `--allow-dirty` (recorded).
 
 ## Hard rules
 
@@ -73,6 +86,7 @@ All code lives in `src/redline/`.
 - Build only what the current phase asks. Ask before adding a dependency.
 - Brute force first, optimize second; keep the brute-force version as a test oracle.
 - Answer keys never reach a strategy: strategies receive only a `PublicPuzzle` (puzzle text + answer format), and an AST test enforces it.
+- Seeds 0-999 are DEV: prompt and strategy changes are only ever tuned on them. Reported results use TEST seeds starting at 1,000,000, which are never looked at while tuning. (`redline/seeds.py`; the runner refuses ranges outside one split, and reports label the split.)
 - Generators are seeded and deterministic: same (difficulty, seed) gives the same puzzle. Use a local `random.Random(seed)`, and never iterate an unsorted set of strings (string hashing varies per process).
 - Every generator gets Hypothesis property tests: exactly one solution; the key satisfies every clue.
 - Each level strictly increases the search space. Per-puzzle solver effort is recorded (from 1b) and must rise on average across levels; individual puzzles may vary.
