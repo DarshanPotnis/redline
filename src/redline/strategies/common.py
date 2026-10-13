@@ -1,4 +1,5 @@
-"""What every strategy shares: the rules as a system message, and the user-message layout."""
+"""What the grid-answering strategies share: the rules, the user-message layout, and the
+forcing message for budget forcing."""
 
 from inspect_ai.model import ChatMessage, ChatMessageSystem, ChatMessageUser
 
@@ -10,6 +11,10 @@ RULES = (
     'belongs to exactly one house. "Left" means a lower house number, "directly left" means '
     'the next lower number, and "next to" means adjacent houses. Every clue is true, and '
     "together the clues determine exactly one answer."
+)
+FORCE_ANSWER = (
+    "You have run out of reasoning budget. Output only your final answer as JSON now, based on "
+    "your reasoning so far."
 )
 
 

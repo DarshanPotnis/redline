@@ -13,9 +13,11 @@ from inspect_ai.scorer import Score, Scorer, Target, accuracy, mean, scorer, std
 from inspect_ai.solver import TaskState
 from pydantic import TypeAdapter
 
+from redline.jsonscan import last_json
 from redline.puzzles.logic_grid.clues import holds
 from redline.puzzles.logic_grid.model import Clue, Solution, Spec
 from redline.puzzles.logic_grid.vocab import ATTRIBUTES
+from redline.strategies.base import CallRecord
 
 # house -> attribute -> value, in the spec's own spelling
 type Grid = dict[int, dict[str, str]]
@@ -68,7 +70,7 @@ def parse_grid(response: str, spec: Spec) -> Grid | ParseError:
     names (or their labels, like "House color") and values in any case, with spaces trimmed.
     Strict on content: every house, every attribute, every value from that attribute's list.
     """
-    pairs = _last_json_object(response)
+    pairs: _Object | None = last_json(response, "{", _DECODER)
     if pairs is None:
         return ParseError("no_json", "no JSON object in the response")
     houses: dict[int, _Object] = {}
@@ -131,10 +133,11 @@ def truncation(stop_reason: str, output_tokens: int | None, max_tokens: int) -> 
         "valid_grid": [mean()],
         "truncated": [mean()],
         "context_limited": [mean()],
+        "forced_answer": [mean()],
     }
 )
-def grid_verifier(max_tokens: int) -> Scorer:
-    """`max_tokens` is the run's budget, from its model profile."""
+def grid_verifier() -> Scorer:
+    """Grades the strategy's final text; truncation is judged on the final model call."""
 
     async def score(state: TaskState, target: Target) -> Score:
         hidden = state.metadata["hidden"]
@@ -143,15 +146,19 @@ def grid_verifier(max_tokens: int) -> Scorer:
         solution = Solution.model_validate_json(target.text)
         result = grade(parsed, solution, _CLUES.validate_python(hidden["clues"]))
         broken = None if result.broken_clues is None else list(result.broken_clues)
-        usage = state.output.usage
-        output_tokens = usage.output_tokens if usage else None
-        stop_reason = state.output.stop_reason
-        truncated, context_limited = truncation(stop_reason, output_tokens, max_tokens)
+        run = state.metadata.get("strategy_run", {})
+        calls = [CallRecord.model_validate(call) for call in run.get("calls", [])]
+        final = calls[-1] if calls else None
+        truncated, context_limited = (
+            truncation(final.stop_reason, final.output_tokens, final.max_tokens)
+            if final
+            else (False, False)
+        )
         explanation = _explain(result)
-        if context_limited:
+        if final and context_limited:
             explanation += (
                 f"; harness failure: the context window stopped generation at "
-                f"{output_tokens} of {max_tokens} tokens"
+                f"{final.output_tokens} of {final.max_tokens} tokens"
             )
         return Score(
             value={
@@ -161,6 +168,7 @@ def grid_verifier(max_tokens: int) -> Scorer:
                 "cell_accuracy": result.cell_accuracy,
                 "truncated": float(truncated),
                 "context_limited": float(context_limited),
+                "forced_answer": float(any(call.forcing for call in calls)),
             },
             answer=None if isinstance(parsed, ParseError) else json.dumps(parsed),
             explanation=explanation,
@@ -168,31 +176,18 @@ def grid_verifier(max_tokens: int) -> Scorer:
                 "broken_clues": broken,
                 "n_broken": None if broken is None else len(broken),
                 "parse_error": result.parse_error,
-                "stop_reason": stop_reason,
-                "input_tokens": usage.input_tokens if usage else None,
-                "output_tokens": output_tokens,
-                "reasoning_tokens": usage.reasoning_tokens if usage else None,
-                "max_tokens": max_tokens,
+                "n_calls": len(calls),
+                "budget_used": run.get("budget", {}).get("used"),
+                # the final call, whose stop decides truncated and context_limited
+                "stop_reason": final.stop_reason if final else None,
+                "input_tokens": final.input_tokens if final else None,
+                "output_tokens": final.output_tokens if final else None,
+                "reasoning_tokens": final.reasoning_tokens if final else None,
+                "max_tokens": final.max_tokens if final else None,
             },
         )
 
     return score
-
-
-def _last_json_object(text: str) -> _Object | None:
-    """Scan every "{" and keep the last top-level object that decodes; skip past each one, so
-    the houses nested inside an answer never count as answers themselves."""
-    found: _Object | None = None
-    start = text.find("{")
-    while start != -1:
-        try:
-            value, end = _DECODER.raw_decode(text, start)
-        except json.JSONDecodeError:
-            start = text.find("{", start + 1)
-            continue
-        found = value
-        start = text.find("{", end)
-    return found
 
 
 def _house_number(key: str) -> int | None:

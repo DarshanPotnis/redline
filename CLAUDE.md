@@ -9,7 +9,7 @@ All code lives in `src/redline/`.
 | Package | Responsibility |
 |---|---|
 | `puzzles` | Seeded generators; each returns puzzle text, a hidden structured instance, and the answer key |
-| `strategies` | Pure functions from a `PublicPuzzle` to chat messages; they never see `TaskState` or the answer key (AST-tested) |
+| `strategies` | Async `run(PublicPuzzle, BudgetedModel) -> StrategyResult` (contract v2, `base.py`); they never see `TaskState` or the answer key (AST- and replay-tested) |
 | `scoring` | The verifier, as an Inspect scorer: parses the model's grid, grades it, names the broken clues |
 | `controller` | The adaptive difficulty loop |
 | `stats` | Breaking-point fits and error bars |
@@ -48,8 +48,8 @@ All code lives in `src/redline/`.
   - **1a:** logic-grid generator (done).
   - **1b:** Z3 solver + per-puzzle difficulty features; the ladder becomes levels 1-7 (done).
   - **1c:** Inspect task + verifier + direct and cot strategies (done).
-  - **1c.1 (CURRENT):** pinned model profiles + truncation-aware scoring.
-  - **1d:** Z3-translate strategy + misread diagnosis.
+  - **1c.1:** pinned model profiles + truncation-aware scoring (done).
+  - **1d (CURRENT):** budgeted strategies with budget forcing, then Z3-translate strategy + misread diagnosis.
   - **1e:** Reasoning Gym adapter, ladder runner, Parquet export, first chart, first real run.
   - Generated logic-grid puzzles are fully relational by design: `at` clues are excluded from the generator's candidate pool, but `at` stays in the clue schema for the 1d translations.
   - The generator counts solutions with backtracking up to a search space of 1,000,000 (levels 1-4) and with Z3 above it. Every counter is exact and the generator only branches on "count == 1", so the counter never changes a puzzle.
@@ -57,6 +57,13 @@ All code lives in `src/redline/`.
 - **Phase 2: agentic strategies** (code execution in Inspect's Docker sandbox, `react()` agent), budget caps, caching.
 - **Phase 3: adaptive controller** (staircase, then IRT), breaking points with bootstrapped error bars.
 - **Phase 4:** more generators, a static dashboard (DuckDB-WASM), a write-up.
+
+## Strategy contract (v2)
+
+- A strategy is `async def run(puzzle: PublicPuzzle, model: BudgetedModel) -> StrategyResult`: `final_text` is what the verifier grades, `artifacts` (JSON) go to the scorer.
+- `BudgetedModel` (`strategies/base.py`) is the only way a strategy reaches the model. It holds every sample to `TOTAL_BUDGET` output tokens (`redline/budget.py`), sets each call's `max_tokens`, records every call, and refuses calls once the budget is spent.
+- Budget forcing (s1): a reasoning call may use at most what remains minus `ANSWER_RESERVE`. If it stops on `max_tokens`, exactly one forcing call follows with the rest, appending the strategy's forcing message.
+- `tasks/solver.py` builds the `PublicPuzzle` and the `BudgetedModel`, runs the strategy, and stores the final text as the output and `{artifacts, calls, budget}` in `state.metadata["strategy_run"]` for the scorer.
 
 ## Hard rules
 
@@ -69,8 +76,9 @@ All code lives in `src/redline/`.
 - Each level strictly increases the search space. Per-puzzle solver effort is recorded (from 1b) and must rise on average across levels; individual puzzles may vary.
 - Tests never call real models; use `mockllm/model`.
 - All strategies in a comparison run under the same budget, and reasoning tokens count toward it.
+- All strategies share one BudgetedModel rule: TOTAL_BUDGET output tokens per sample, with one forcing call from a 512-token reserve.
 - Record the exact model ID and config for every experiment run.
 - Every real-model run uses a registered profile. Samples with context_limited=1 are harness failures: they are excluded from accuracy and the count is reported.
-- The profile owns `max_tokens` and sampling; never override them on the command line (the scorer's truncation check assumes the profile's budget).
+- `BudgetedModel` sets every call's `max_tokens`; the profile owns sampling and connections. Never override sampling on the command line.
 - mypy strict, small pure functions, logging instead of print in library code.
 - Run `make check` before every commit; use conventional commit messages.

@@ -1,13 +1,18 @@
 """Strategies see only the public puzzle: enforced on the source (AST) and on their output."""
 
 import ast
+import asyncio
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from inspect_ai.model import ChatMessage, GenerateConfig, ModelOutput
 
 import redline.strategies
+from redline.puzzles.base import PublicPuzzle
 from redline.puzzles.logic_grid import generate
-from redline.strategies import STRATEGIES, get_strategy
+from redline.strategies import STRATEGIES, cot, direct, get_strategy
+from redline.strategies.base import BudgetedModel
 from redline.strategies.common import RULES
 from redline.strategies.cot import INSTRUCTION as COT_INSTRUCTION
 from redline.strategies.direct import INSTRUCTION as DIRECT_INSTRUCTION
@@ -72,21 +77,33 @@ def test_the_ast_check_catches_violations() -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "instruction"), [("direct", DIRECT_INSTRUCTION), ("cot", COT_INSTRUCTION)]
+    ("build", "instruction"),
+    [(direct.build_messages, DIRECT_INSTRUCTION), (cot.build_messages, COT_INSTRUCTION)],
 )
-def test_messages_are_the_rules_then_the_puzzle(name: str, instruction: str) -> None:
+def test_messages_are_the_rules_then_the_puzzle(
+    build: Callable[[PublicPuzzle], list[ChatMessage]], instruction: str
+) -> None:
     public = generate(2, 3).to_instance().public()
-    system, user = get_strategy(name)(public)
+    system, user = build(public)
     assert (system.role, system.content) == ("system", RULES)
     assert user.role == "user"
     assert user.content == f"{public.text}\n\n{public.answer_format}\n\n{instruction}"
 
 
-def test_strategies_are_pure() -> None:
+@pytest.mark.parametrize("name", sorted(STRATEGIES))
+def test_strategies_are_pure(name: str) -> None:
+    # Same public puzzle and same model replies give the same calls and the same result.
     public = generate(1, 0).to_instance().public()
-    for build in STRATEGIES.values():
-        first, second = build(public), build(public)
-        assert [(m.role, m.content) for m in first] == [(m.role, m.content) for m in second]
+
+    async def reply(messages: list[ChatMessage], config: GenerateConfig) -> ModelOutput:
+        return ModelOutput.from_content("fake", "[]")
+
+    runs = []
+    for _ in range(2):
+        model = BudgetedModel(reply)
+        result = asyncio.run(get_strategy(name)(public, model))
+        runs.append((result, [call.messages for call in model.calls]))
+    assert runs[0] == runs[1]
 
 
 def test_unknown_strategy_lists_the_valid_ones() -> None:

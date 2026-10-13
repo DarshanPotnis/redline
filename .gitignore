@@ -27,3 +27,6 @@ data/
 
 # OS
 .DS_Store
+
+# Claude Code session state (e.g. scheduled-task locks)
+.claude/*.lock

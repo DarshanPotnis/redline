@@ -6,9 +6,9 @@ import re
 import pytest
 from inspect_ai.model import get_model
 
+from redline.budget import TOTAL_BUDGET
 from redline.runtime.profiles import (
     LOCAL_MODELS,
-    MAX_TOKENS,
     MODELFILES,
     REPO_ROOT,
     active_profile,
@@ -40,10 +40,19 @@ def test_the_registry() -> None:
     ]
 
 
-def test_every_profile_has_the_same_budget() -> None:
-    assert MAX_TOKENS == 4096
+def test_every_profile_records_the_same_budget() -> None:
+    assert TOTAL_BUDGET == 4096
     for profile in profiles().values():
-        assert profile.max_tokens == profile.generate_config().max_tokens == MAX_TOKENS
+        assert profile.max_tokens == profile.generate_config().max_tokens == TOTAL_BUDGET
+
+
+def test_connection_limits() -> None:
+    # Local: one request at a time, so parallel 8k contexts never swap on the 8 GB dev machine.
+    for model_id in LOCAL_IDS:
+        assert profile_for(model_id).generate_config().max_connections == 1
+    for model_id in ("groq/llama-3.3-70b-versatile", "groq/openai/gpt-oss-20b"):
+        assert profile_for(model_id).generate_config().max_connections == 2
+    assert profile_for("mockllm/model").generate_config().max_connections is None
 
 
 def test_every_modelfile_has_a_profile_and_back() -> None:
@@ -77,7 +86,7 @@ def test_the_request_turns_thinking_off_and_pins_sampling(model_id: str) -> None
     params = get_model(model_id).api.completion_params(profile.generate_config(), tools=False)
     assert params["extra_body"] == {"reasoning_effort": "none"}
     assert (params["temperature"], params["top_p"]) == (1.0, 1.0)
-    assert params.get("max_tokens", params.get("max_completion_tokens")) == MAX_TOKENS
+    assert params.get("max_tokens", params.get("max_completion_tokens")) == TOTAL_BUDGET
 
 
 def test_groq_profiles_pin_their_sampling() -> None:

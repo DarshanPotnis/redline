@@ -21,13 +21,13 @@ def logic_grid(
     strategy: str = "direct",
 ) -> Task:
     get_strategy(strategy)  # fail before building the dataset, listing the valid names
-    # The model under evaluation must have a registered profile: it sets the budget and the
-    # sampling, and lands in the log. An unregistered model is an error, never a default.
+    # The model under evaluation must have a registered profile: it sets the sampling and the
+    # connection limit, and lands in the log. An unregistered model is an error, never a default.
     profile = active_profile()
     return Task(
         dataset=logic_grid_samples(parse_levels(levels), n_seeds, seed_start),
         solver=strategy_solver(strategy),
-        scorer=grid_verifier(max_tokens=profile.max_tokens),
+        scorer=grid_verifier(),
         config=profile.generate_config(),
         metadata={"model_profile": profile.model_dump(mode="json")},
     )

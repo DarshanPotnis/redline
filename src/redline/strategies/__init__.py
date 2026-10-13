@@ -1,21 +1,18 @@
-"""Strategies: pure functions from a PublicPuzzle to chat messages.
+"""Strategies: `async def run(puzzle: PublicPuzzle, model: BudgetedModel) -> StrategyResult`.
 
-A strategy never sees Inspect's task state or the answer key. tasks/solver.py is the only bridge
-to Inspect, and an AST test keeps this package clear of answer-bearing names and of scoring.
+A strategy never sees Inspect's task state or the answer key, and reaches the model only through
+its BudgetedModel (contract v2, strategies/base.py). tasks/solver.py is the only bridge to
+Inspect; an AST test keeps this package clear of answer-bearing names and of scoring.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 
-from inspect_ai.model import ChatMessage
-
-from redline.puzzles.base import PublicPuzzle
 from redline.strategies import cot, direct
-
-type Strategy = Callable[[PublicPuzzle], list[ChatMessage]]
+from redline.strategies.base import Strategy
 
 STRATEGIES: Mapping[str, Strategy] = {
-    "direct": direct.build_messages,
-    "cot": cot.build_messages,
+    "direct": direct.run,
+    "cot": cot.run,
 }
 
 

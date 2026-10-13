@@ -1,7 +1,8 @@
 """Model profiles: everything that shapes a model's generations, pinned and logged.
 
-Every real-model run goes through a registered profile. It fixes the budget (`max_tokens`, the
-same for every profile), the context window, thinking, and the sampling sent with each request.
+Every real-model run goes through a registered profile. It records the budget (`max_tokens`:
+TOTAL_BUDGET for every profile; BudgetedModel sets each call's cap within it), the context
+window, thinking, the sampling sent with each request, and how many requests may run at once.
 A local model's profile also records its Modelfile and the file's SHA-256. There are no silent
 defaults: an unregistered model is an error.
 """
@@ -18,7 +19,8 @@ from inspect_ai.model import GenerateConfig
 from inspect_ai.model._model import active_model
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-MAX_TOKENS = 4096  # the budget rule: identical for every profile, reasoning tokens included
+from redline.budget import TOTAL_BUDGET
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MODELFILES = REPO_ROOT / "models" / "ollama"
 LOCAL_MODELS = ("qwen3.5-0.8b", "qwen3.5-2b", "qwen3.5-4b")
@@ -30,14 +32,21 @@ class ModelProfile(BaseModel):
     model_id: str  # the Inspect model ID
     provider: Literal["ollama", "groq", "mockllm"]
     context_window: int | None  # in tokens; None for the mock model, which has none
-    max_tokens: int = MAX_TOKENS
+    max_tokens: int = TOTAL_BUDGET
     thinking: Literal["off", "on", "n/a"]
+    max_connections: int | None = None  # concurrent requests; None: Inspect's default
     generate: dict[str, JsonValue] = Field(default_factory=dict)  # GenerateConfig overrides
     modelfile_path: str | None = None  # repo-relative; local models only
     modelfile_sha256: str | None = None
 
     def generate_config(self) -> GenerateConfig:
-        return GenerateConfig.model_validate({"max_tokens": self.max_tokens, **self.generate})
+        return GenerateConfig.model_validate(
+            {
+                "max_tokens": self.max_tokens,
+                "max_connections": self.max_connections,
+                **self.generate,
+            }
+        )
 
 
 @functools.cache
@@ -48,12 +57,16 @@ def profiles() -> dict[str, ModelProfile]:
             model_id="mockllm/model", provider="mockllm", context_window=None, thinking="n/a"
         ),
         # Context windows: console.groq.com/docs/models, read 2026-10-13.
+        # Connections: 2. Groq answers in seconds, so a second connection hides latency, while the
+        # free tier's tokens-per-minute limit (8K TPM listed for gpt-oss-20b) caps throughput
+        # anyway; Inspect retries rate-limited requests.
         # Sampling: Meta's reference defaults (meta-llama/llama-models, llama3/generation.py).
         ModelProfile(
             model_id="groq/llama-3.3-70b-versatile",
             provider="groq",
             context_window=131_072,
             thinking="n/a",
+            max_connections=2,
             generate={"temperature": 0.6, "top_p": 0.9, "seed": 0},
         ),
         # Sampling: "We recommend sampling with temperature=1.0 and top_p=1.0" (openai/gpt-oss
@@ -63,6 +76,7 @@ def profiles() -> dict[str, ModelProfile]:
             provider="groq",
             context_window=131_072,
             thinking="on",
+            max_connections=2,
             generate={"temperature": 1.0, "top_p": 1.0, "seed": 0, "reasoning_effort": "medium"},
         ),
     ]
@@ -113,6 +127,9 @@ def _local(name: str) -> ModelProfile:
         provider="ollama",
         context_window=int(parameters["num_ctx"]),
         thinking="off",
+        # One request at a time: Ollama otherwise serves several in parallel, and four 8k
+        # contexts of the 4B model would swap on the 8 GB dev machine.
+        max_connections=1,
         generate={
             # Ollama's OpenAI-compatible API sets temperature and top_p to 1.0 whenever a request
             # leaves them out (openai/openai.go, v0.33.3), overriding the Modelfile, so these are
