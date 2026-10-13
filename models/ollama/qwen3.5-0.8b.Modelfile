@@ -1,0 +1,18 @@
+# Redline's pinned qwen3.5:0.8b. Inspect model ID: ollama/redline-qwen3.5-0.8b (build: make ollama-models)
+#
+# Context: 8192 tokens, so a level-7 prompt plus the 4096-token budget fits. Ollama's default is 4096.
+# Sampling: the model card's recommended settings for non-thinking mode, text tasks:
+#   https://huggingface.co/Qwen/Qwen3.5-0.8B ("Best Practices", read 2026-10-13)
+#   temperature=1.0, top_p=1.00, top_k=20, min_p=0.0, presence_penalty=2.0, repetition_penalty=1.0
+# Thinking is switched off per request (reasoning_effort "none"), see src/redline/runtime/profiles.py.
+# temperature and top_p are also sent with every request, read from this file: Ollama's
+# OpenAI-compatible API resets them to 1.0 whenever a request leaves them out.
+FROM qwen3.5:0.8b
+PARAMETER num_ctx 8192
+PARAMETER temperature 1.0
+PARAMETER top_p 1.0
+PARAMETER top_k 20
+PARAMETER min_p 0.0
+PARAMETER presence_penalty 2.0
+PARAMETER repeat_penalty 1.0
+PARAMETER seed 0

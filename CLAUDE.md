@@ -15,6 +15,7 @@ All code lives in `src/redline/`.
 | `stats` | Breaking-point fits and error bars |
 | `export` | Inspect logs to Parquet |
 | `tasks` | Inspect task definitions (`logic_grid.py`; `smoke.py` is the Phase 0 pipeline check) and `solver.py`, the only code that touches `TaskState` |
+| `runtime` | Model profiles (`profiles.py`): per-model budget, context window, thinking and pinned sampling, written into every eval log |
 
 ## Commands
 
@@ -32,11 +33,13 @@ All code lives in `src/redline/`.
 | `make view` | `inspect view` (log viewer) |
 | `make puzzle LEVEL=3 SEED=7` | Print a logic-grid puzzle and its answer grid |
 | `make difficulty-report` | Regenerate `reports/difficulty_ladder.md` (about a minute) |
+| `make ollama-models` | Pull missing base models and (re)create `redline-*` from `models/ollama/*.Modelfile` |
 
 ## Models
 
-- **Local, via Ollama** (Inspect model ID `ollama/<tag>`): `qwen3.5:0.8b`, `qwen3.5:2b`, `qwen3.5:4b`. The dev machine is an 8 GB M2 MacBook Air: max 4B, one model loaded at a time, thinking mode off for local models.
-- **Cloud, via the Groq free tier** (no card on file): `groq/llama-3.3-70b-versatile` and `groq/openai/gpt-oss-20b`, for regular-vs-reasoning comparisons.
+- **Local, via Ollama:** `ollama/redline-qwen3.5-0.8b`, `ollama/redline-qwen3.5-2b`, `ollama/redline-qwen3.5-4b`, built by `make ollama-models` from `models/ollama/*.Modelfile`: an 8192-token context and every sampling parameter pinned from the model card's non-thinking settings. Thinking is off per request (`reasoning_effort: "none"` in `extra_body`). The dev machine is an 8 GB M2 MacBook Air: max 4B, one model loaded at a time.
+- **Cloud, via the Groq free tier** (no card on file): `groq/llama-3.3-70b-versatile` and `groq/openai/gpt-oss-20b` (reasoning on; its reasoning tokens count toward the budget), for regular-vs-reasoning comparisons.
+- Every model is registered in `runtime/profiles.py`. Ollama's OpenAI-compatible API resets `temperature` and `top_p` to 1.0 when a request omits them, so local profiles read both from the Modelfile and send them; the Modelfile stays the single source of truth.
 
 ## Phase plan
 
@@ -44,7 +47,8 @@ All code lives in `src/redline/`.
 - **Phase 1: first curve (CURRENT).** One logic-grid generator with a brute-force uniqueness check, one Reasoning Gym task, two strategies (direct; Z3-translate via a JSON constraint format we compile ourselves, so no model-written code runs yet), the local Qwen 3.5 sizes plus one Groq model, a fixed difficulty ladder, Parquet export, one accuracy-vs-difficulty chart. Phase 1 is where pandas, pyarrow, duckdb, and jupyter come in.
   - **1a:** logic-grid generator (done).
   - **1b:** Z3 solver + per-puzzle difficulty features; the ladder becomes levels 1-7 (done).
-  - **1c (CURRENT):** Inspect task + verifier + direct and cot strategies.
+  - **1c:** Inspect task + verifier + direct and cot strategies (done).
+  - **1c.1 (CURRENT):** pinned model profiles + truncation-aware scoring.
   - **1d:** Z3-translate strategy + misread diagnosis.
   - **1e:** Reasoning Gym adapter, ladder runner, Parquet export, first chart, first real run.
   - Generated logic-grid puzzles are fully relational by design: `at` clues are excluded from the generator's candidate pool, but `at` stays in the clue schema for the 1d translations.
@@ -66,5 +70,7 @@ All code lives in `src/redline/`.
 - Tests never call real models; use `mockllm/model`.
 - All strategies in a comparison run under the same budget, and reasoning tokens count toward it.
 - Record the exact model ID and config for every experiment run.
+- Every real-model run uses a registered profile. Samples with context_limited=1 are harness failures: they are excluded from accuracy and the count is reported.
+- The profile owns `max_tokens` and sampling; never override them on the command line (the scorer's truncation check assumes the profile's budget).
 - mypy strict, small pure functions, logging instead of print in library code.
 - Run `make check` before every commit; use conventional commit messages.

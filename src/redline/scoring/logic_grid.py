@@ -113,15 +113,29 @@ def grade(parsed: Grid | ParseError, solution: Solution, clues: Sequence[Clue]) 
     return Grade(True, valid, columns == expected, cell_accuracy, broken, None)
 
 
+def truncation(stop_reason: str, output_tokens: int | None, max_tokens: int) -> tuple[bool, bool]:
+    """(truncated, context_limited) for one generation.
+
+    Truncated: generation was cut off. Context-limited: it was cut off before spending the
+    budget, so the context window stopped it. That is a harness failure, not a model failure.
+    """
+    truncated = stop_reason in ("max_tokens", "model_length")
+    return truncated, truncated and output_tokens is not None and output_tokens < max_tokens
+
+
 @scorer(
     metrics={
         "solved": [accuracy(), stderr()],
         "cell_accuracy": [mean(), stderr()],
         "format_ok": [mean()],
         "valid_grid": [mean()],
+        "truncated": [mean()],
+        "context_limited": [mean()],
     }
 )
-def grid_verifier() -> Scorer:
+def grid_verifier(max_tokens: int) -> Scorer:
+    """`max_tokens` is the run's budget, from its model profile."""
+
     async def score(state: TaskState, target: Target) -> Score:
         hidden = state.metadata["hidden"]
         spec = Spec.model_validate(hidden["spec"])
@@ -129,19 +143,36 @@ def grid_verifier() -> Scorer:
         solution = Solution.model_validate_json(target.text)
         result = grade(parsed, solution, _CLUES.validate_python(hidden["clues"]))
         broken = None if result.broken_clues is None else list(result.broken_clues)
+        usage = state.output.usage
+        output_tokens = usage.output_tokens if usage else None
+        stop_reason = state.output.stop_reason
+        truncated, context_limited = truncation(stop_reason, output_tokens, max_tokens)
+        explanation = _explain(result)
+        if context_limited:
+            explanation += (
+                f"; harness failure: the context window stopped generation at "
+                f"{output_tokens} of {max_tokens} tokens"
+            )
         return Score(
             value={
                 "format_ok": float(result.format_ok),
                 "valid_grid": float(result.valid_grid),
                 "solved": float(result.solved),
                 "cell_accuracy": result.cell_accuracy,
+                "truncated": float(truncated),
+                "context_limited": float(context_limited),
             },
             answer=None if isinstance(parsed, ParseError) else json.dumps(parsed),
-            explanation=_explain(result),
+            explanation=explanation,
             metadata={
                 "broken_clues": broken,
                 "n_broken": None if broken is None else len(broken),
                 "parse_error": result.parse_error,
+                "stop_reason": stop_reason,
+                "input_tokens": usage.input_tokens if usage else None,
+                "output_tokens": output_tokens,
+                "reasoning_tokens": usage.reasoning_tokens if usage else None,
+                "max_tokens": max_tokens,
             },
         )
 

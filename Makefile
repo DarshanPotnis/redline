@@ -1,7 +1,8 @@
-.PHONY: setup format lint typecheck test test-all check smoke eval-mock view puzzle difficulty-report
+.PHONY: setup format lint typecheck test test-all check smoke eval-mock view puzzle difficulty-report ollama-models
 
 LEVEL ?= 3
 SEED ?= 0
+MODELFILES := $(wildcard models/ollama/*.Modelfile)
 
 setup:
 	uv sync
@@ -43,3 +44,14 @@ puzzle:
 
 difficulty-report:
 	uv run python -m redline.puzzles.logic_grid.difficulty_report
+
+# Pull each Modelfile's base if missing, then (re)create redline-<name>. Creating again is cheap,
+# so the Ollama models always match the Modelfiles in the repo.
+ollama-models:
+	@for file in $(MODELFILES); do \
+		name=$$(basename $$file .Modelfile); \
+		base=$$(awk '$$1 == "FROM" {print $$2; exit}' $$file); \
+		ollama show $$base > /dev/null 2>&1 || ollama pull $$base || exit 1; \
+		echo "ollama create redline-$$name -f $$file"; \
+		ollama create redline-$$name -f $$file || exit 1; \
+	done

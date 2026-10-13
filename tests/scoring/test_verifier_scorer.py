@@ -9,7 +9,7 @@ from inspect_ai.model import ChatMessage, ModelOutput, get_model
 
 from redline.puzzles.base import PublicPuzzle
 from redline.strategies import get_strategy
-from redline.tasks.logic_grid import logic_grid
+from redline.tasks.logic_grid import logic_grid, logic_grid_samples
 
 
 def answer(target: str, swap: bool = False) -> str:
@@ -33,8 +33,7 @@ def prompt(sample: Sample) -> str:
 
 
 def test_correct_swapped_and_garbage_answers(tmp_path: Path) -> None:
-    task = logic_grid(levels="2", n_seeds=3, strategy="direct")
-    samples = list(task.dataset)
+    samples = logic_grid_samples([2], 3)
     replies = {
         prompt(samples[0]): answer(samples[0].target),
         prompt(samples[1]): answer(samples[1].target, swap=True),
@@ -45,7 +44,8 @@ def test_correct_swapped_and_garbage_answers(tmp_path: Path) -> None:
         return ModelOutput.from_content(model="mockllm/model", content=replies[messages[-1].text])
 
     [log] = inspect_ai.eval(
-        task,
+        logic_grid,
+        task_args={"levels": "2", "n_seeds": 3, "strategy": "direct"},
         model=get_model("mockllm/model", custom_outputs=respond),
         log_dir=str(tmp_path),
         display="none",
@@ -60,8 +60,12 @@ def test_correct_swapped_and_garbage_answers(tmp_path: Path) -> None:
         "valid_grid": 1.0,
         "solved": 1.0,
         "cell_accuracy": 1.0,
+        "truncated": 0.0,
+        "context_limited": 0.0,
     }
-    assert correct.metadata == {"broken_clues": [], "n_broken": 0, "parse_error": None}
+    assert correct.metadata is not None
+    grading = {key: correct.metadata[key] for key in ("broken_clues", "n_broken", "parse_error")}
+    assert grading == {"broken_clues": [], "n_broken": 0, "parse_error": None}
 
     assert isinstance(swapped.value, dict) and swapped.metadata is not None
     assert swapped.value["solved"] == 0.0

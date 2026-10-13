@@ -11,8 +11,11 @@ from inspect_ai.log import EvalLog, read_eval_log
 from inspect_ai.model import ChatMessage, GenerateConfig, ModelOutput, get_model
 
 from redline.puzzles.base import PublicPuzzle
+from redline.runtime.profiles import profile_for
 from redline.strategies import STRATEGIES, get_strategy
-from redline.tasks.logic_grid import MAX_TOKENS, logic_grid, logic_grid_samples, parse_levels
+from redline.tasks.logic_grid import logic_grid, logic_grid_samples, parse_levels
+
+MOCK = profile_for("mockllm/model")
 
 
 def public(sample: Sample) -> PublicPuzzle:
@@ -34,7 +37,7 @@ def answer(target: str) -> str:
 class Run:
     strategy: str
     samples: dict[str, Sample]
-    configs: list[tuple[int | None, float | None]]  # what each model call was given
+    configs: list[GenerateConfig]  # what each model call was given
     log: EvalLog  # read back from disk
 
 
@@ -42,16 +45,15 @@ class Run:
 def run(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory) -> Run:
     """One eval per strategy: a mock model that answers every puzzle from its own target."""
     strategy: str = request.param
-    task = logic_grid(levels="1,2,3", n_seeds=2, strategy=strategy)
-    samples = {str(sample.id): sample for sample in task.dataset}
+    samples = {str(sample.id): sample for sample in logic_grid_samples([1, 2, 3], 2)}
     build = get_strategy(strategy)
     answers = {build(public(s))[-1].text: answer(s.target) for s in samples.values()}
-    configs: list[tuple[int | None, float | None]] = []
+    configs: list[GenerateConfig] = []
 
     def respond(
         messages: list[ChatMessage], _tools: object, _choice: object, config: GenerateConfig
     ) -> ModelOutput:
-        configs.append((config.max_tokens, config.temperature))
+        configs.append(config)
         grid = answers[messages[-1].text]
         reply = (
             grid
@@ -60,8 +62,10 @@ def run(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory
         )
         return ModelOutput.from_content(model="mockllm/model", content=reply)
 
+    # The task is built inside eval, as in a real run, so it resolves the mock model's profile.
     [log] = inspect_ai.eval(
-        task,
+        logic_grid,
+        task_args={"levels": "1,2,3", "n_seeds": 2, "strategy": strategy},
         model=get_model("mockllm/model", custom_outputs=respond),
         log_dir=str(tmp_path_factory.mktemp(strategy)),
         display="none",
@@ -81,6 +85,8 @@ def test_every_sample_is_solved_and_scored(run: Run) -> None:
             "valid_grid": 1.0,
             "solved": 1.0,
             "cell_accuracy": 1.0,
+            "truncated": 0.0,
+            "context_limited": 0.0,
         }
     assert run.log.results is not None
     solved = next(score for score in run.log.results.scores if score.name == "solved")
@@ -98,9 +104,23 @@ def test_the_model_saw_only_the_public_puzzle(run: Run) -> None:
         assert [(m.role, m.content) for m in event.input] == [(m.role, m.content) for m in expected]
 
 
-def test_every_strategy_gets_the_same_budget(run: Run) -> None:
-    assert run.configs and set(run.configs) == {(MAX_TOKENS, 0.0)}
-    assert (run.log.plan.config.max_tokens, run.log.plan.config.temperature) == (MAX_TOKENS, 0.0)
+def test_every_call_gets_the_profile_config(run: Run) -> None:
+    # The budget rule: every strategy gets the same profile-defined config, nothing else.
+    expected = MOCK.generate_config()
+    assert run.configs
+    for config in [*run.configs, run.log.plan.config]:
+        assert config.max_tokens == expected.max_tokens == 4096
+        assert (config.temperature, config.top_p) == (expected.temperature, expected.top_p)
+
+
+def test_the_log_records_the_full_profile(run: Run) -> None:
+    assert run.log.eval.metadata is not None
+    assert run.log.eval.metadata["model_profile"] == MOCK.model_dump(mode="json")
+
+
+def test_the_task_needs_a_model_under_evaluation() -> None:
+    with pytest.raises(RuntimeError, match="no model is being evaluated"):
+        logic_grid()
 
 
 def test_samples_carry_ids_public_hidden_and_features() -> None:
@@ -124,12 +144,13 @@ def test_the_dataset_is_identical_across_calls() -> None:
 def test_levels_parse_from_the_cli_forms() -> None:
     assert parse_levels("1,2,3") == [1, 2, 3]
     assert parse_levels(" 4 , 7 ") == [4, 7]
-    assert parse_levels(2) == [2]
+    assert parse_levels(2) == [2]  # `-T levels=2` arrives as an int
+    assert parse_levels(["1", "2"]) == [1, 2]  # `-T levels=1,2` arrives as a list of strings
     assert parse_levels([1, 3]) == [1, 3]
 
 
-@pytest.mark.parametrize("levels", ["0", "1,9", ""])
-def test_unknown_levels_are_rejected(levels: str) -> None:
+@pytest.mark.parametrize("levels", ["0", "1,9", "", "two", ["1", "x"]])
+def test_unknown_levels_are_rejected(levels: str | list[str]) -> None:
     with pytest.raises(ValueError, match="levels"):
         parse_levels(levels)
 
