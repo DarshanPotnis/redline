@@ -20,6 +20,7 @@ from redline.puzzles.logic_grid.model import (
     NotSameHouseClue,
     Ref,
     SameHouseClue,
+    Solution,
     Spec,
 )
 
@@ -54,6 +55,42 @@ def encode(spec: Spec, clues: Sequence[Clue], ctx: z3.Context) -> Encoding:
         structure += [z3.And(house >= 1, house <= spec.houses) for house in column]
         structure.append(z3.Distinct(*column))
     return Encoding(variables, structure, [_constraint(clue, variables) for clue in clues])
+
+
+def solutions_z3(spec: Spec, clues: Sequence[Clue], cap: int) -> list[Solution]:
+    """Up to `cap` actual solutions, found like count_solutions_z3 (solve, block, repeat)."""
+    if cap < 1:
+        raise ValueError(f"cap must be at least 1, got {cap}")
+    encoding = encode(spec, clues, z3.main_ctx())
+    solver = z3.Solver()
+    solver.add(*encoding.structure, *encoding.clues)
+    found: list[Solution] = []
+    while len(found) < cap:
+        result = solver.check()
+        if result == z3.unsat:
+            break
+        if result != z3.sat:
+            raise RuntimeError(f"z3 returned {result}: {solver.reason_unknown()}")
+        model = solver.model()
+        houses = {
+            key: int(model.eval(variable, model_completion=True).as_long())
+            for key, variable in encoding.variables.items()
+        }
+        found.append(_solution(spec, houses))
+        solver.add(
+            z3.Or([v != model.eval(v, model_completion=True) for v in encoding.variables.values()])
+        )
+    return found
+
+
+def _solution(spec: Spec, houses: dict[tuple[str, str], int]) -> Solution:
+    """Each attribute's values ordered by the house that holds them."""
+    return Solution(
+        {
+            name: tuple(sorted(values, key=lambda value: houses[name, value]))
+            for name, values in spec.attributes
+        }
+    )
 
 
 def count_models(solver: z3.Solver, variables: Sequence[Any], cap: int | None) -> int:

@@ -14,6 +14,9 @@ class PublicPuzzle(BaseModel):
 
     text: str
     answer_format: str
+    # Generator-specific structure, all of it already stated in `text` (for the logic grid: the
+    # houses, and each attribute with its values). Never the clues, never the answer.
+    structure: dict[str, JsonValue]
 
 
 class PuzzleInstance(BaseModel):
@@ -26,6 +29,7 @@ class PuzzleInstance(BaseModel):
     seed: int
     text: str
     answer_format: str
+    structure: dict[str, JsonValue]
     answer: dict[str, JsonValue]
     instance: dict[str, JsonValue]
     search_space: int
@@ -33,7 +37,9 @@ class PuzzleInstance(BaseModel):
     features: dict[str, float] = Field(default_factory=dict)
 
     def public(self) -> PublicPuzzle:
-        return PublicPuzzle(text=self.text, answer_format=self.answer_format)
+        return PublicPuzzle(
+            text=self.text, answer_format=self.answer_format, structure=self.structure
+        )
 
 
 class PuzzleGenerator(Protocol):

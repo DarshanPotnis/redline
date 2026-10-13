@@ -107,5 +107,5 @@ def test_strategies_are_pure(name: str) -> None:
 
 
 def test_unknown_strategy_lists_the_valid_ones() -> None:
-    with pytest.raises(ValueError, match="choose from cot, direct"):
+    with pytest.raises(ValueError, match="choose from cot, direct, z3_translate"):
         get_strategy("peek")

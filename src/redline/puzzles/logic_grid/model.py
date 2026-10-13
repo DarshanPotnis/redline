@@ -188,6 +188,7 @@ class LogicGridPuzzle(_Frozen):
             seed=self.seed,
             text=render(self),
             answer_format=answer_format(self.spec),
+            structure=self.spec.model_dump(mode="json"),
             answer=self.solution.model_dump(mode="json"),
             instance={
                 **self.model_dump(mode="json", include={"spec", "clues"}),

@@ -35,6 +35,7 @@ smoke:
 eval-mock:
 	uv run inspect eval src/redline/tasks/logic_grid.py --model mockllm/model -T strategy=direct
 	uv run inspect eval src/redline/tasks/logic_grid.py --model mockllm/model -T strategy=cot
+	uv run inspect eval src/redline/tasks/logic_grid.py --model mockllm/model -T strategy=z3_translate
 
 view:
 	uv run inspect view

@@ -4,6 +4,7 @@
 alone, so it reveals nothing. Instructions such as "reason step by step" belong to strategies.
 """
 
+import json
 from typing import assert_never
 
 from redline.puzzles.logic_grid.model import (
@@ -17,6 +18,7 @@ from redline.puzzles.logic_grid.model import (
     NotSameHouseClue,
     Ref,
     SameHouseClue,
+    Solution,
     Spec,
 )
 from redline.puzzles.logic_grid.vocab import ATTRIBUTES
@@ -51,6 +53,18 @@ def answer_format(spec: Spec) -> str:
         f"Each value is an object with every attribute: {', '.join(quoted)}. "
         "Use each value exactly as it is listed in the puzzle. Template:\n"
         "{\n" + template + "\n}"
+    )
+
+
+def answer_json(solution: Solution) -> str:
+    """A grid written in the answer format: {"1": {"name": "...", ...}, ...}."""
+    columns = solution.root
+    houses = len(next(iter(columns.values())))
+    return json.dumps(
+        {
+            str(house): {name: values[house - 1] for name, values in columns.items()}
+            for house in range(1, houses + 1)
+        }
     )
 
 

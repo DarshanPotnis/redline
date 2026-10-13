@@ -9,8 +9,12 @@ from inspect_ai.dataset import Sample
 from redline.puzzles.logic_grid import GENERATOR, LADDER
 from redline.runtime.profiles import active_profile
 from redline.scoring.logic_grid import grid_verifier
+from redline.scoring.translation import translation_verifier
 from redline.strategies import get_strategy
 from redline.tasks.solver import strategy_solver
+
+# Strategies that translate the clues; their samples also get the misread diagnosis.
+TRANSLATING = ("z3_translate",)
 
 
 @task
@@ -27,7 +31,9 @@ def logic_grid(
     return Task(
         dataset=logic_grid_samples(parse_levels(levels), n_seeds, seed_start),
         solver=strategy_solver(strategy),
-        scorer=grid_verifier(),
+        scorer=[grid_verifier(), translation_verifier()]
+        if strategy in TRANSLATING
+        else grid_verifier(),
         config=profile.generate_config(),
         metadata={"model_profile": profile.model_dump(mode="json")},
     )

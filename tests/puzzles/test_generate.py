@@ -143,9 +143,15 @@ def test_generation_ignores_the_string_hash_seed() -> None:
 
 def identity_json(instance: PuzzleInstance) -> str:
     """The puzzle's identity: the instance minus its difficulty features (Z3 statistics may
-    differ across platforms) and its answer format (pinned on its own in test_render.py)."""
+    differ across platforms), its answer format (pinned on its own in test_render.py) and its
+    public structure (a copy of the spec, which the identity already holds)."""
     return instance.model_dump_json(
-        exclude={"features": True, "answer_format": True, "instance": {"features_method": True}}
+        exclude={
+            "features": True,
+            "answer_format": True,
+            "structure": True,
+            "instance": {"features_method": True},
+        }
     )
 
 
@@ -189,8 +195,9 @@ def test_instance_holds_text_key_hidden_puzzle_and_features(level: int, seed: in
     assert (instance.level, instance.seed) == (level, seed)
     assert instance.text == render(p)
     assert instance.answer_format == answer_format(p.spec)
+    assert instance.structure == p.spec.model_dump(mode="json")
     assert instance.public() == PublicPuzzle(
-        text=instance.text, answer_format=answer_format(p.spec)
+        text=instance.text, answer_format=answer_format(p.spec), structure=instance.structure
     )
     assert instance.answer == p.solution.model_dump(mode="json")
     assert list(instance.instance) == ["spec", "clues", "features_method"]

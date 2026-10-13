@@ -7,12 +7,13 @@ Inspect; an AST test keeps this package clear of answer-bearing names and of sco
 
 from collections.abc import Mapping
 
-from redline.strategies import cot, direct
+from redline.strategies import cot, direct, z3_translate
 from redline.strategies.base import Strategy
 
 STRATEGIES: Mapping[str, Strategy] = {
     "direct": direct.run,
     "cot": cot.run,
+    "z3_translate": z3_translate.run,
 }
 
 

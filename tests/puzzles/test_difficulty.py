@@ -70,6 +70,7 @@ def test_features_default_to_empty() -> None:
         seed=0,
         text="",
         answer_format="",
+        structure={},
         answer={},
         instance={},
         search_space=1,

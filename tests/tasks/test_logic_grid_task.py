@@ -78,7 +78,11 @@ def run(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory
         messages: list[ChatMessage], _tools: object, _choice: object, config: GenerateConfig
     ) -> ModelOutput:
         configs.append(config)
-        grid = answer(puzzle_of(messages, samples).target)
+        sample = puzzle_of(messages, samples)
+        if strategy == "z3_translate":  # a perfect translator: the true clues, as a JSON list
+            clues = json.dumps((sample.metadata or {})["hidden"]["clues"])
+            return output(f"Here are the clues:\n```json\n{clues}\n```", "stop", 120)
+        grid = answer(sample.target)
         reply = (
             grid
             if strategy == "direct"
@@ -219,6 +223,20 @@ def test_samples_carry_ids_public_hidden_and_features() -> None:
     }
 
 
+@pytest.mark.parametrize("level", [1, 2, 3, 4])
+def test_the_public_structure_only_restates_the_text(level: int) -> None:
+    [sample] = logic_grid_samples([level], 1)
+    structure = public(sample).structure
+    assert set(structure) == {"houses", "attributes"}  # never the clues, never the answer
+    assert structure == (sample.metadata or {})["hidden"]["spec"]
+    text = str(sample.input)
+    assert f"There are {structure['houses']} houses" in text
+    attributes = structure["attributes"]
+    assert isinstance(attributes, list)
+    for _, values in attributes:
+        assert all(value in text for value in values)
+
+
 def test_the_dataset_is_identical_across_calls() -> None:
     assert logic_grid_samples([1, 2], 2) == logic_grid_samples([1, 2], 2)
 
@@ -238,5 +256,7 @@ def test_unknown_levels_are_rejected(levels: str | list[str]) -> None:
 
 
 def test_an_unknown_strategy_lists_the_valid_ones() -> None:
-    with pytest.raises(ValueError, match="unknown strategy 'oracle'; choose from cot, direct"):
+    with pytest.raises(
+        ValueError, match="unknown strategy 'oracle'; choose from cot, direct, z3_translate"
+    ):
         logic_grid(strategy="oracle")

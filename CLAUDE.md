@@ -10,7 +10,7 @@ All code lives in `src/redline/`.
 |---|---|
 | `puzzles` | Seeded generators; each returns puzzle text, a hidden structured instance, and the answer key |
 | `strategies` | Async `run(PublicPuzzle, BudgetedModel) -> StrategyResult` (contract v2, `base.py`); they never see `TaskState` or the answer key (AST- and replay-tested) |
-| `scoring` | The verifier, as an Inspect scorer: parses the model's grid, grades it, names the broken clues |
+| `scoring` | Inspect scorers: `grid_verifier` parses the model's grid, grades it and names the broken clues; `translation_verifier` diagnoses misreads for translating strategies |
 | `controller` | The adaptive difficulty loop |
 | `stats` | Breaking-point fits and error bars |
 | `export` | Inspect logs to Parquet |
@@ -64,6 +64,8 @@ All code lives in `src/redline/`.
 - `BudgetedModel` (`strategies/base.py`) is the only way a strategy reaches the model. It holds every sample to `TOTAL_BUDGET` output tokens (`redline/budget.py`), sets each call's `max_tokens`, records every call, and refuses calls once the budget is spent.
 - Budget forcing (s1): a reasoning call may use at most what remains minus `ANSWER_RESERVE`. If it stops on `max_tokens`, exactly one forcing call follows with the rest, appending the strategy's forcing message.
 - `tasks/solver.py` builds the `PublicPuzzle` and the `BudgetedModel`, runs the strategy, and stores the final text as the output and `{artifacts, calls, budget}` in `state.metadata["strategy_run"]` for the scorer.
+- Strategies: `direct`, `cot`, and `z3_translate`. z3_translate makes the model a translator only: it writes the clues as the clue JSON (examples use placeholder names from no puzzle), Z3 solves them locally, and only a unique solution becomes an answer (unsat or ambiguous answers nothing; one attempt). `PublicPuzzle.structure` (the spec: houses, attributes, values, all already in the text) gives it the exact spellings.
+- Misread diagnosis (`translation_verifier`, z3_translate runs only): `n_wrong` = translated clues false on the true solution; `n_missed` = true clues with no canonically equal translation (refs of symmetric kinds sorted); `translation_exact` = neither. The full misread-vs-misreasoned verdict joins strategies by sample id in 1e: an exact translation plus a wrong direct answer means the model understood the clues but could not reason through them.
 
 ## Hard rules
 
