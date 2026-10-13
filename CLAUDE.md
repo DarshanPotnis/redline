@@ -35,7 +35,7 @@ All code lives in `src/redline/`.
 | `make view` | `inspect view` (log viewer) |
 | `make puzzle LEVEL=3 SEED=7` | Print a logic-grid puzzle and its answer grid |
 | `make difficulty-report` | Regenerate `reports/difficulty_ladder.md` (about a minute) |
-| `make pilot` | The 1e pilot: 3 local models x 3 strategies, levels 1-7, 5 dev seeds, early stop 2, run id `pilot-1e` (resumable; under `caffeinate -i` on macOS) |
+| `make pilot` | The 1e pilot: 3 local models x 3 strategies, levels 1-7, 3 dev seeds, early stop 2, run id `pilot-1e` (resumable; under `caffeinate -is` on macOS) |
 | `make report RUN=<id>` | Parquet export, chart (`reports/figures/<id>_ladder.png`) and report (`reports/<id>.md`) for one run |
 | `make ollama-models` | Pull missing base models and (re)create `redline-*` from `models/ollama/*.Modelfile` |
 
@@ -76,7 +76,7 @@ All code lives in `src/redline/`.
 ## Ladder runner (1e)
 
 - `uv run python -m redline.runner --models ... --strategies ... --levels 1-7 --n-seeds N --seed-start S --early-stop 2 --run-id <name>`. Each (model, strategy) climbs the levels in order and stops after `early-stop` consecutive levels with solved = 0 (the high-jump rule); the stop reason (`completed`, `early_stop`, `error`) goes in the manifest.
-- Each cell is one Inspect `eval_set` with its own log dir, `logs/runs/<run_id>/<model>/<strategy>/L<level>/`. A single eval_set can't hold the run (the next level depends on the last result), but per cell it gives resume: complete logs are reused without model calls, an interrupted log finishes with its completed samples reused. Rerun the same command to resume.
+- Each cell is one Inspect `eval_set` with its own log dir, `logs/runs/<run_id>/<model>/<strategy>/L<level>/`. A single eval_set can't hold the run (the next level depends on the last result), but per cell it gives resume: complete logs are reused without model calls, an interrupted log finishes with its completed samples reused. Rerun the same command to resume. Ctrl-C stops the whole run (exit 130), not just the cell; samples finished before a crash or Ctrl-C are recovered from Inspect's local sample buffer, so only the sample in flight reruns.
 - Local models run first, one at a time: every loaded Ollama model is unloaded before a local model starts and after it finishes. API models run after.
 - `manifest.json` records the config, seed split, git SHA and dirty flag, every profile, Inspect/z3/Python versions, sessions with start and end times, and per ladder the levels run and the stop reason. A resume must match the config, commit and profiles. A dirty tree is refused unless `--allow-dirty` (recorded).
 

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from redline.runner import ladder as ladder_module
 from redline.runner.ladder import Cell, CellResult, RunnerError, run, run_order, should_stop
 from redline.runner.manifest import GitState, RunConfig, load
 
@@ -201,3 +202,33 @@ def test_bad_configs_are_refused_before_anything_runs(
         run(config(**changes), runs_root=tmp_path, run_cell=script, memory=script, git=CLEAN)
     assert script.events == []
     assert not (tmp_path / "t").exists()
+
+
+def test_an_interrupt_stops_the_whole_run_and_saves_the_manifest(tmp_path: Path) -> None:
+    class Interrupted(Script):
+        def __call__(self, cell: Cell) -> CellResult:
+            if cell.level == 2:
+                raise KeyboardInterrupt
+            return super().__call__(cell)
+
+    script = Interrupted({(LOCAL_SMALL, "direct", 1): 3})
+    with pytest.raises(KeyboardInterrupt):
+        run(
+            config(strategies=("direct", "cot")),
+            runs_root=tmp_path,
+            run_cell=script,
+            memory=script,
+            git=CLEAN,
+        )
+    assert script.events == ["unload", f"{LOCAL_SMALL} direct L1"]  # no cot, no final unload
+    manifest = load(tmp_path / "t")
+    assert manifest.sessions[0].ended_at is not None
+    [ladder] = manifest.ladders  # the finished level is kept; cot never started
+    assert [level.level for level in ladder.levels] == [1]
+    assert ladder.stop_reason is None
+
+
+def test_an_eval_set_that_returns_no_log_was_interrupted(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ladder_module, "eval_set", lambda *args, **kwargs: (False, []))
+    with pytest.raises(KeyboardInterrupt):
+        ladder_module.inspect_cells("none")(Cell("mockllm/model", "direct", 1, 1, 0, Path()))

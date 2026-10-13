@@ -137,7 +137,9 @@ def inspect_cells(
             ctl_server=False,  # several eval_sets run in one process
         )
         if not logs:
-            return CellResult(None, "error", 0, 0, 0, "eval_set returned no log")
+            # eval_set returns no log when Ctrl-C stops it before one is written. Stop the run
+            # rather than fail the cell and climb on: a rerun resumes from here.
+            raise KeyboardInterrupt
         [log] = logs
         grids = [_grid_scores(summary) for summary in read_eval_log_sample_summaries(log.location)]
         scored = [grid for grid in grids if grid is not None]

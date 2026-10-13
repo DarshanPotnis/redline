@@ -5,7 +5,8 @@
         --run-id my-run
 
 Exit status: 0 when every ladder completed or stopped early, 1 when a ladder ended in an error
-(rerun the same command to resume it), 2 when the runner refused to start.
+(rerun the same command to resume it), 2 when the runner refused to start, 130 when
+interrupted (rerun the same command to resume).
 """
 
 import argparse
@@ -108,6 +109,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (RunnerError, ValidationError) as error:
         logger.error("refusing to run: %s", error)
         return 2
+    except KeyboardInterrupt:
+        logger.warning("interrupted; run the same command again to resume where it stopped")
+        return 130
     for ladder in manifest.ladders:
         levels = ", ".join(f"L{lvl.level} {lvl.solved}/{lvl.n}" for lvl in ladder.levels)
         logger.info("%s %s: %s; %s", ladder.model, ladder.strategy, ladder.stop_detail, levels)

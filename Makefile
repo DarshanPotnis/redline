@@ -4,8 +4,9 @@ LEVEL ?= 3
 SEED ?= 0
 MODELFILES := $(wildcard models/ollama/*.Modelfile)
 PILOT_RUN ?= pilot-1e
-# macOS: keep the machine from idle-sleeping during long runs (closing the lid still sleeps it).
-CAFFEINATE := $(shell command -v caffeinate > /dev/null 2>&1 && echo caffeinate -i)
+# macOS: keep the machine awake during long runs. -i alone let it drop into Deep Idle sleep
+# (1e calibration); -s also holds system sleep off on AC power. Closing the lid still sleeps it.
+CAFFEINATE := $(shell command -v caffeinate > /dev/null 2>&1 && echo caffeinate -is)
 
 setup:
 	uv sync
@@ -64,7 +65,7 @@ ollama-models:
 pilot:
 	$(CAFFEINATE) uv run python -m redline.runner \
 		--models ollama/redline-qwen3.5-0.8b ollama/redline-qwen3.5-2b ollama/redline-qwen3.5-4b \
-		--strategies direct cot z3_translate --levels 1-7 --n-seeds 5 --seed-start 0 \
+		--strategies direct cot z3_translate --levels 1-7 --n-seeds 3 --seed-start 0 \
 		--early-stop 2 --run-id $(PILOT_RUN)
 
 # Parquet export (data/runs/<RUN>/), chart and markdown report (reports/<RUN>.md) for one run.
