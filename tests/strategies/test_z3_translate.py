@@ -2,13 +2,14 @@
 
 import asyncio
 import json
+import re
 
 import pytest
 from inspect_ai.model import ChatMessage, GenerateConfig, ModelOutput
 from pydantic import TypeAdapter
 
 from redline.puzzles.logic_grid import LogicGridPuzzle, generate
-from redline.puzzles.logic_grid.model import Clue, LeftOfClue
+from redline.puzzles.logic_grid.model import CLUE_KINDS, Clue, LeftOfClue, NotAtClue
 from redline.puzzles.logic_grid.render import answer_json
 from redline.puzzles.logic_grid.vocab import VOCAB
 from redline.strategies import z3_translate
@@ -40,6 +41,23 @@ def test_the_examples_are_valid_clues_with_placeholder_names() -> None:
     for clue in examples:
         for ref in [getattr(clue, field) for field in ("ref", "a", "b") if hasattr(clue, field)]:
             assert ref.attribute not in vocabulary and ref.value not in vocabulary
+
+
+def test_the_prompt_states_each_kinds_exact_fields() -> None:
+    # One line per kind, read from the clue model: the pilot's 4B wrote not_at with two refs.
+    lines = z3_translate.CLUE_FORMAT.splitlines()
+    vocabulary = {a.name for a in VOCAB} | {v for a in VOCAB for v in a.values}
+    kinds = []
+    for model in z3_translate.CLUE_MODELS:
+        line = z3_translate.field_shape(model)
+        assert line in lines
+        assert re.findall(r'"(\w+)":', line) == list(model.model_fields)
+        assert not any(re.search(rf"\b{re.escape(word)}\b", line) for word in vocabulary)
+        kinds.append(model.model_fields["kind"].default)
+    assert kinds == list(CLUE_KINDS)
+    assert z3_translate.field_shape(NotAtClue) == (
+        '- not_at: {"kind": "not_at", "ref": <value>, "house": <house number>}'
+    )
 
 
 @pytest.mark.parametrize(("level", "seed"), PUZZLES)

@@ -14,11 +14,23 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from inspect_ai.model import ChatMessage, ChatMessageSystem, ChatMessageUser
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
 from redline.jsonscan import last_json
 from redline.puzzles.base import PublicPuzzle
-from redline.puzzles.logic_grid.model import AtClue, Clue, NotAtClue, Ref, Solution, Spec
+from redline.puzzles.logic_grid.model import (
+    AtClue,
+    Clue,
+    ImmediatelyLeftClue,
+    LeftOfClue,
+    NextToClue,
+    NotAtClue,
+    NotSameHouseClue,
+    Ref,
+    SameHouseClue,
+    Solution,
+    Spec,
+)
 from redline.puzzles.logic_grid.render import answer_json
 from redline.puzzles.logic_grid.solve_z3 import solutions_z3
 from redline.strategies.base import BudgetedModel, StrategyResult
@@ -66,11 +78,37 @@ EXAMPLES: list[tuple[str, dict[str, JsonValue]]] = [
         {"kind": "next_to", "a": _ref("shape", "circle"), "b": _ref("shape", "square")},
     ),
 ]
+# The exact fields of each kind, read from the clue models so they can't drift. The pilot's 4B
+# wrote not_at as {"a": ..., "b": {"house": 3}}: the examples alone didn't pin the shape.
+CLUE_MODELS: tuple[type[BaseModel], ...] = (
+    AtClue,
+    NotAtClue,
+    SameHouseClue,
+    NotSameHouseClue,
+    LeftOfClue,
+    ImmediatelyLeftClue,
+    NextToClue,
+)
+_FIELD_PLACEHOLDERS = {"ref": "<value>", "a": "<value>", "b": "<value>", "house": "<house number>"}
+
+
+def field_shape(model: type[BaseModel]) -> str:
+    """One kind and its fields: - at: {"kind": "at", "ref": <value>, "house": <house number>}"""
+    kind = model.model_fields["kind"].default
+    fields = [
+        f'"{name}": {_FIELD_PLACEHOLDERS[name]}' for name in model.model_fields if name != "kind"
+    ]
+    return f'- {kind}: {{"kind": "{kind}", {", ".join(fields)}}}'
+
+
 CLUE_FORMAT = "\n".join(
     [
         "Write the clues as a JSON list with one object per clue. A value is written as "
-        '{"attribute": "<attribute>", "value": "<value>"}. These are the seven kinds of clue, each '
-        "with an example (the attributes in the examples are placeholders, not from this puzzle):",
+        '{"attribute": "<attribute>", "value": "<value>"}. Each kind of clue has exactly these '
+        "fields:",
+        *(field_shape(model) for model in CLUE_MODELS),
+        "These are the seven kinds of clue, each with an example (the attributes in the examples "
+        "are placeholders, not from this puzzle):",
         *(
             f"- {example['kind']}: {meaning}. {json.dumps(example)}"
             for meaning, example in EXAMPLES
