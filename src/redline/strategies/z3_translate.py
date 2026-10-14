@@ -3,25 +3,36 @@
 One attempt; retrying with solver feedback is the Phase 2 agentic version. Only a unique solution
 becomes an answer: an unsat or ambiguous translation answers nothing rather than guess.
 
-The translation is parsed item by item. A malformed item (not a clue, or naming a value or house
-the puzzle doesn't have) is dropped and recorded, and the rest go to Z3, so the status is what Z3
-sees. It is a parse error only when nothing reaches Z3: no JSON list, or no well-formed item.
+The model writes every clue as {"kind", "a", "b"} (strategies/clue_format.py), taught by one
+worked example from a made-up puzzle. The translation is parsed item by item. A malformed item
+(not in that format, or naming a value or house the puzzle doesn't have) is dropped and recorded,
+and the rest go to Z3, so the status is what Z3 sees. It is a parse error only when nothing
+reaches Z3: no JSON list, or no well-formed item.
 """
 
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from inspect_ai.model import ChatMessage, ChatMessageSystem, ChatMessageUser
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import JsonValue, ValidationError
 
 from redline.jsonscan import last_json
 from redline.puzzles.base import PublicPuzzle
-from redline.puzzles.logic_grid.model import AtClue, Clue, NotAtClue, Ref, Solution, Spec
+from redline.puzzles.logic_grid.model import (
+    AtClue,
+    Clue,
+    ImmediatelyLeftClue,
+    NotAtClue,
+    Ref,
+    SameHouseClue,
+    Solution,
+    Spec,
+)
 from redline.puzzles.logic_grid.render import answer_json
 from redline.puzzles.logic_grid.solve_z3 import solutions_z3
 from redline.strategies.base import BudgetedModel, StrategyResult
+from redline.strategies.clue_format import TranslatedClue, to_clue, translation_json
 
 type Status = Literal["parse_error", "unsat", "ambiguous", "unique"]
 
@@ -33,51 +44,57 @@ INSTRUCTION = "Translate every clue into this JSON list. Do not solve the puzzle
 FORCE_TRANSLATION = "Output only the JSON list of clues now."
 
 
-def _ref(attribute: str, value: str) -> dict[str, JsonValue]:
-    return {"attribute": attribute, "value": value}
+KINDS: tuple[tuple[str, str], ...] = (
+    ("at", "a lives in house b"),
+    ("not_at", "a does not live in house b"),
+    ("same_house", "a and b are the same person"),
+    ("not_same_house", "a and b are different people"),
+    ("left_of", "a lives somewhere to the left of b"),
+    ("immediately_left", "a lives directly left of b"),
+    ("next_to", "a and b live next to each other"),
+)
 
-
-# One example per kind. The attributes and values are placeholders that no puzzle uses (a test
-# checks), so the examples show the format without hinting at any puzzle's content.
-EXAMPLES: list[tuple[str, dict[str, JsonValue]]] = [
-    ("a value is in a given house", {"kind": "at", "ref": _ref("shape", "circle"), "house": 2}),
+# One worked example: a two-house puzzle whose attributes and values appear in no real puzzle (a
+# test checks), as English clues followed by their complete translation. Small models copy what
+# they see: one-line examples leaked their placeholder values into answers, and field lines full
+# of <value> placeholders were mimicked structurally (1e.1), so they see a real input and output.
+_CANOE = Ref(attribute="boat", value="canoe")
+_KAYAK = Ref(attribute="boat", value="kayak")
+_BERET = Ref(attribute="hat", value="beret")
+_FEDORA = Ref(attribute="hat", value="fedora")
+EXAMPLE_SPEC = Spec(
+    houses=2, attributes=(("boat", ("canoe", "kayak")), ("hat", ("beret", "fedora")))
+)
+EXAMPLE: tuple[tuple[str, Clue], ...] = (
+    ("The person with the canoe lives in house 2.", AtClue(ref=_CANOE, house=2)),
+    ("The person with the beret does not live in house 2.", NotAtClue(ref=_BERET, house=2)),
     (
-        "a value is not in a given house",
-        {"kind": "not_at", "ref": _ref("shape", "square"), "house": 1},
+        "The person with the kayak lives directly left of the person with the fedora.",
+        ImmediatelyLeftClue(a=_KAYAK, b=_FEDORA),
     ),
     (
-        "two values belong to the same house",
-        {"kind": "same_house", "a": _ref("shape", "circle"), "b": _ref("tool", "hammer")},
+        "The person with the canoe is the person with the fedora.",
+        SameHouseClue(a=_CANOE, b=_FEDORA),
     ),
-    (
-        "two values belong to different houses",
-        {"kind": "not_same_house", "a": _ref("shape", "square"), "b": _ref("tool", "saw")},
-    ),
-    (
-        "a is somewhere to the left of b (a lower house number)",
-        {"kind": "left_of", "a": _ref("tool", "saw"), "b": _ref("shape", "circle")},
-    ),
-    (
-        "a is directly left of b (exactly one house lower)",
-        {"kind": "immediately_left", "a": _ref("shape", "square"), "b": _ref("tool", "hammer")},
-    ),
-    (
-        "a and b are in adjacent houses",
-        {"kind": "next_to", "a": _ref("shape", "circle"), "b": _ref("shape", "square")},
-    ),
-]
+)
 CLUE_FORMAT = "\n".join(
     [
-        "Write the clues as a JSON list with one object per clue. A value is written as "
-        '{"attribute": "<attribute>", "value": "<value>"}. These are the seven kinds of clue, each '
-        "with an example (the attributes in the examples are placeholders, not from this puzzle):",
-        *(
-            f"- {example['kind']}: {meaning}. {json.dumps(example)}"
-            for meaning, example in EXAMPLES
-        ),
+        "Write the clues as a JSON list with one object per clue. Every object has exactly three "
+        'fields: "kind", "a" and "b". "a" is always a value from the puzzle, written with its '
+        'attribute. "b" is a value too, except in the kinds at and not_at, where "b" is a house '
+        "number.",
+        "The seven kinds:",
+        *(f"- {kind}: {meaning}." for kind, meaning in KINDS),
+        "",
+        "A worked example, from a different puzzle with 2 houses (its attributes, boat and hat, "
+        "are not in your puzzle):",
+        *(f"- {name}: {', '.join(values)}" for name, values in EXAMPLE_SPEC.attributes),
+        "Clues:",
+        *(f"{n}. {sentence}" for n, (sentence, _) in enumerate(EXAMPLE, start=1)),
+        "Translation:",
+        translation_json([clue for _, clue in EXAMPLE], one_per_line=True),
     ]
 )
-_CLUE: TypeAdapter[Clue] = TypeAdapter(Clue)
 
 
 @dataclass(frozen=True)
@@ -154,14 +171,15 @@ def parse_translation(text: str, spec: Spec) -> Translation:
 
 
 def _parse_item(item: Any, spec: Spec) -> Clue | str:
-    """One clue in the spec's spelling, or why the item isn't one."""
+    """One clue in the spec's spelling, or why the item isn't one. Items must be in the
+    translation format ({"kind", "a", "b"}); the internal {"ref", "house"} shape is malformed."""
     try:
-        clue = _CLUE.validate_python(item)
+        translated = TranslatedClue.model_validate(item)
     except ValidationError as error:
         first = error.errors()[0]
         where = ".".join(str(part) for part in first["loc"])
         return f"not a clue ({error.error_count()} errors; {where}: {first['msg']})"
-    return _in_spec(clue, spec)
+    return _in_spec(to_clue(translated), spec)
 
 
 def _in_spec(clue: Clue, spec: Spec) -> Clue | str:

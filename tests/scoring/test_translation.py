@@ -9,6 +9,7 @@ import pytest
 from inspect_ai.dataset import Sample
 from inspect_ai.model import ChatMessage, ModelOutput, get_model
 
+from conftest import as_translation
 from redline.puzzles.logic_grid import generate
 from redline.puzzles.logic_grid.model import (
     AtClue,
@@ -157,13 +158,14 @@ def test_translation_verifier_in_an_eval(tmp_path: Path) -> None:
         return out
 
     exact, misread, garbage, padded = samples
-    # The pilot's malformed item: not_at in the two-ref shape.
-    bad_item = {"kind": "not_at", "a": {"attribute": "name", "value": "Bob"}, "b": {"house": 3}}
+    # A malformed item: not_at in the internal {ref, house} shape, which the translation
+    # format ({kind, a, b}) rejects.
+    bad_item = {"kind": "not_at", "ref": {"attribute": "name", "value": "Bob"}, "house": 3}
     replies = {
-        str(exact.input): json.dumps(clues_of(exact)),
-        str(misread.input): json.dumps(flipped(misread)),
+        str(exact.input): as_translation(clues_of(exact)),
+        str(misread.input): as_translation(flipped(misread)),
         str(garbage.input): "The answer is obviously house 2.",
-        str(padded.input): json.dumps([*clues_of(padded), bad_item]),
+        str(padded.input): json.dumps([*json.loads(as_translation(clues_of(padded))), bad_item]),
     }
 
     def respond(messages: list[ChatMessage], *_: object) -> ModelOutput:

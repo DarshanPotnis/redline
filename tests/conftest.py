@@ -10,9 +10,12 @@ import pytest
 from hypothesis import settings
 from inspect_ai.dataset import Sample
 from inspect_ai.model import ChatMessage, GenerateConfig, ModelOutput, ModelUsage, get_model
+from pydantic import TypeAdapter
 
+from redline.puzzles.logic_grid.model import Clue
 from redline.runner.ladder import inspect_cells, run
 from redline.runner.manifest import GitState, Manifest, RunConfig
+from redline.strategies.clue_format import translation_json
 from redline.tasks.logic_grid import logic_grid_samples
 
 settings.register_profile("ci", derandomize=True, max_examples=50, deadline=None)
@@ -81,7 +84,9 @@ def mock_run(tmp_path_factory: pytest.TempPathFactory) -> MockRun:
         if sample_id.startswith("logic_grid/L1/"):
             hidden = (sample.metadata or {})["hidden"]
             text = (
-                json.dumps(hidden["clues"]) if _is_translation(messages) else _grid(sample.target)
+                as_translation(hidden["clues"])
+                if _is_translation(messages)
+                else _grid(sample.target)
             )
             return _usage(ModelOutput.from_content("mockllm/model", text), 120)
         if sample_id == CONTEXT_LIMITED and not _is_translation(messages):
@@ -96,6 +101,11 @@ def mock_run(tmp_path_factory: pytest.TempPathFactory) -> MockRun:
     first = len(calls)
     resumed = run(MOCK_CONFIG, runs_root=runs_root, run_cell=cells, git=MOCK_GIT)
     return MockRun(runs_root, runs_root / "mock", manifest, calls, first, resumed)
+
+
+def as_translation(clues: list[dict[str, object]]) -> str:
+    """A perfect translator's reply: stored clues, rewritten in the translation format."""
+    return translation_json(TypeAdapter(list[Clue]).validate_python(clues))
 
 
 def _is_translation(messages: list[ChatMessage]) -> bool:

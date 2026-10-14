@@ -19,6 +19,7 @@ from inspect_ai.model import (
     get_model,
 )
 
+from conftest import as_translation
 from redline.budget import ANSWER_RESERVE, TOTAL_BUDGET
 from redline.puzzles.base import PublicPuzzle
 from redline.puzzles.logic_grid.model import GENERATOR_VERSION
@@ -81,7 +82,7 @@ def run(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory
         configs.append(config)
         sample = puzzle_of(messages, samples)
         if strategy == "z3_translate":  # a perfect translator: the true clues, as a JSON list
-            clues = json.dumps((sample.metadata or {})["hidden"]["clues"])
+            clues = as_translation((sample.metadata or {})["hidden"]["clues"])
             return output(f"Here are the clues:\n```json\n{clues}\n```", "stop", 120)
         grid = answer(sample.target)
         reply = (
