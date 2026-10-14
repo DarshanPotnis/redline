@@ -161,16 +161,16 @@ STRUCTURE_GOLDEN = {
 }
 
 # SHA-256 of each puzzle's text. A wording change updates these and nothing above. Last updated
-# by "fix(puzzles): unambiguous color phrasing (generator text v2)"; (1, 0) and (4, 3) have no
-# color attribute, so their text did not change.
+# by "chore(puzzles): labels match attribute keys (text v3)"; (1, 0) and (4, 3) have no color
+# attribute, so their text has not changed since v1.
 TEXT_GOLDEN = {
     (1, 0): "aac365c72c9f342768615c48208dc93943e673486fabe5e2426251763298a308",
-    (2, 1): "57b3a7e8308e231766fb28c5fcfefb7b425108989a4c382dd160c3de3a6862d3",
-    (3, 2): "12eb91742e7b2028fd32ed181a9ad082385fae6174e5aee9d6626e79e9cc407d",
+    (2, 1): "c9711fc257b48c7c09d648274bf157fe6c094bf8ae3a9fa2f8ad0a14786e61ea",
+    (3, 2): "2ef43b76e0ec7c9c34ecc636e951915664fae0c3d9a5fbc16b5ddfe0240b3637",
     (4, 3): "04e5697f7cee708f567747359bc58ed04e7790a7b7abcf6d0f91d3bc7af814d5",
-    (5, 0): "7bac1cbb1c070bb76aa7f2c15d6df60273f0a71dae15568add3459fa011e8a2f",
-    (6, 0): "1619d9e075f6b23294f11cba9b4569a182f7ddbb9195b26c1f3e6d1d6ff16020",
-    (7, 0): "5935371a686749457eeab8bc21cddd6cd9ed7b0000666afdb96c29971258e2ca",
+    (5, 0): "0e6d86f6a92dbeea47a1724e0c1d44e6e6166978da54bdae437d7ed5ac731602",
+    (6, 0): "dd38ac87c714c06b9416f5fa5400a81ee987d99cb14cb81b6c66b34015c88ed9",
+    (7, 0): "fccce0037080c475823b29541a4e278e32a6394a1c0649c20adacd51d7635a8e",
 }
 GOLDEN_CASES = [
     pytest.param(*case, marks=[pytest.mark.slow] if case[0] >= 5 else [])
@@ -211,7 +211,7 @@ def test_instance_holds_text_key_hidden_puzzle_and_features(level: int, seed: in
     )
     assert instance.answer == p.solution.model_dump(mode="json")
     assert list(instance.instance) == ["spec", "clues", "generator_version", "features_method"]
-    assert instance.instance["generator_version"] == GENERATOR_VERSION == 2
+    assert instance.instance["generator_version"] == GENERATOR_VERSION == 3
     assert instance.instance["features_method"] == method()
     assert instance.features["n_clues"] == len(p.clues)
     assert instance.search_space == math.factorial(houses) ** attributes

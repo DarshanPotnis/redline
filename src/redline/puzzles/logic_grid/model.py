@@ -10,8 +10,9 @@ from redline.puzzles.base import PuzzleInstance
 GENERATOR_NAME = "logic_grid"
 # The version of the puzzle text. Puzzles (spec, clues, solution) are unchanged across versions;
 # only their wording changes. 1: 1a-1e (pilot-1e). 2: 1e.1, color as "favorite color" instead of
-# "the person in the blue house", which read as a house position.
-GENERATOR_VERSION = 2
+# "the person in the blue house", which read as a house position. 3: 1f, every label equals its
+# attribute key ("Color", not "Favorite color", which models turned into a "favorite_color" key).
+GENERATOR_VERSION = 3
 
 
 class _Frozen(BaseModel):

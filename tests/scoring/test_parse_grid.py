@@ -67,7 +67,7 @@ def raw_object(pairs: list[tuple[str, object]]) -> str:
         pytest.param(
             json.dumps(
                 {
-                    house: {"Name": cells["name"], "Favorite color": cells["color"]}
+                    house: {"Name": cells["name"], "Color": cells["color"]}
                     for house, cells in ANSWER.items()
                 }
             ),

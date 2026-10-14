@@ -18,12 +18,13 @@ class Attribute:
 # fish/water pairs), and none is a substring of another, so answers parse unambiguously. No
 # template, label or value uses a position word ("house", "left", "right", "next", a number):
 # those belong to the position clues alone. Text v1 said "the person in the blue house", which
-# models read as a house position (pilot-1e); v2 says favorite color.
+# models read as a house position (pilot-1e); v2 says favorite color. Each label is its attribute
+# key, capitalized: v2's label "Favorite color" made models write the key "favorite_color" (v3).
 VOCAB: tuple[Attribute, ...] = (
     Attribute("name", "Name", ("Alice", "Bob", "Carol", "Dave", "Erin", "Frank"), "{}"),
     Attribute(
         "color",
-        "Favorite color",
+        "Color",
         ("red", "green", "blue", "yellow", "white", "purple"),
         "the person whose favorite color is {}",
     ),

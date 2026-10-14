@@ -38,3 +38,9 @@ POSITION_WORDS = re.compile(r"\b(house|houses|left|right|next)\b|\d", re.IGNOREC
 def test_no_template_label_or_value_names_a_position(attribute: Attribute) -> None:
     for text in (attribute.template, attribute.label, *attribute.values):
         assert not POSITION_WORDS.search(text), f"{attribute.name}: {text!r}"
+
+
+@pytest.mark.parametrize("attribute", VOCAB, ids=lambda attribute: attribute.name)
+def test_each_label_is_its_attribute_key(attribute: Attribute) -> None:
+    # Models build answer keys from labels: text v2's "Favorite color" became "favorite_color".
+    assert attribute.label.lower() == attribute.name
