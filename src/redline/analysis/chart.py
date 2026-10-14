@@ -1,4 +1,6 @@
-"""The ladder chart: solved rate by level, one panel per model, one line per strategy.
+"""The ladder chart: one column per model, one line per strategy. The top row is the solved
+rate with Wilson intervals; the bottom row is mean cell accuracy, with a dashed line at chance
+(the cell accuracy of a random valid grid, 1/houses).
 
 A level a ladder never reached (it stopped early) has no point: absence, not a zero. Colors are
 the first three categorical slots of the dataviz reference palette, the ones that stay
@@ -14,7 +16,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.ticker import PercentFormatter
 
-from redline.analysis.ladder import LevelRow
+from redline.analysis.ladder import LevelRow, chance_cell_accuracy
 from redline.puzzles.logic_grid import LADDER
 
 SERIES = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948")
@@ -46,11 +48,15 @@ def ladder_chart(
     out: Path,
 ) -> Path:
     colors: Mapping[str, str] = {s: SERIES[i % len(SERIES)] for i, s in enumerate(strategies)}
-    figure = Figure(figsize=(3.6 * len(models) + 0.6, 3.9), dpi=150, facecolor=SURFACE)
-    axes = figure.subplots(1, len(models), sharey=True, squeeze=False)[0]
-    for ax, model in zip(axes, models, strict=True):
+    figure = Figure(figsize=(3.6 * len(models) + 0.6, 6.6), dpi=150, facecolor=SURFACE)
+    grid = figure.subplots(2, len(models), sharex=True, sharey=True, squeeze=False)
+    solved_axes, cell_axes = grid[0], grid[1]
+    for column, model in enumerate(models):
+        ax, cells = solved_axes[column], cell_axes[column]
         _style(ax, levels)
+        _style(cells, levels)
         ax.set_title(model.rsplit("/", 1)[-1], color=INK, fontsize=10, loc="left")
+        _chance_line(cells, levels)
         for i, strategy in enumerate(strategies):
             drawn = points(rows, model, strategy)
             if not drawn:
@@ -59,6 +65,17 @@ def ladder_chart(
             xs = [row.level + offset for row in drawn]
             ys = [row.solved / row.n for row in drawn]
             intervals = [row.interval or (0.0, 0.0) for row in drawn]
+            cells.plot(
+                xs,
+                [row.cell_accuracy for row in drawn],
+                color=colors[strategy],
+                linewidth=2,
+                marker="o",
+                markersize=6,
+                markeredgecolor=SURFACE,
+                markeredgewidth=1.5,
+                zorder=3,
+            )
             ax.errorbar(
                 xs,
                 ys,
@@ -77,8 +94,9 @@ def ladder_chart(
                 label=strategy,
                 zorder=3,
             )
-    axes[0].set_ylabel("solved (95% Wilson)", color=INK_SECONDARY, fontsize=9)
-    handles, labels = _legend_entries(axes)
+    solved_axes[0].set_ylabel("solved (95% Wilson)", color=INK_SECONDARY, fontsize=9)
+    cell_axes[0].set_ylabel("mean cell accuracy", color=INK_SECONDARY, fontsize=9)
+    handles, labels = _legend_entries([*solved_axes, cell_axes[0]])
     figure.legend(
         handles,
         labels,
@@ -89,10 +107,24 @@ def ladder_chart(
         labelcolor=INK_SECONDARY,
     )
     figure.suptitle(title, x=0.01, ha="left", color=INK, fontsize=11)
-    figure.tight_layout(rect=(0, 0, 1, 0.95))
+    figure.tight_layout(rect=(0, 0, 1, 0.96))
     out.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(out, facecolor=SURFACE)
     return out
+
+
+def _chance_line(ax: Axes, levels: Sequence[int]) -> None:
+    """A dashed step at 1/houses across each level's slot."""
+    ax.hlines(
+        [chance_cell_accuracy(level) for level in levels],
+        [level - 0.5 for level in levels],
+        [level + 0.5 for level in levels],
+        colors=MUTED,
+        linestyles="dashed",
+        linewidth=1.2,
+        label="chance (random valid grid)",
+        zorder=2,
+    )
 
 
 def _style(ax: Axes, levels: Sequence[int]) -> None:
@@ -111,7 +143,7 @@ def _style(ax: Axes, levels: Sequence[int]) -> None:
 
 
 def _legend_entries(axes: Sequence[Axes]) -> tuple[list[Artist], list[str]]:
-    """Each strategy once, from whichever panel drew it."""
+    """Each strategy (and the chance line) once, from whichever panel drew it."""
     entries: dict[str, Artist] = {}
     for ax in axes:
         for handle, label in zip(*ax.get_legend_handles_labels(), strict=True):

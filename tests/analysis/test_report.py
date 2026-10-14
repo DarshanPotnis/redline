@@ -61,6 +61,7 @@ def test_the_report_and_chart_are_written(built: Built) -> None:
         in built.markdown
     )
     assert "| model | direct | 2 | 3x3 | 1 | 1 | 0/1 |" in built.markdown
+    assert "| 0/1 | 0%-79% | 0% | 33% |" in built.markdown  # cell accuracy, then chance
     assert "| model | direct | L1 2/2, L2 0/2, L3 0/2 | early_stop |" in built.markdown
     assert "Context-limited samples: **1 of 12**" in built.markdown
     assert "| 4 | 4x4 |" not in built.markdown

@@ -38,7 +38,7 @@ def build_report(
         config.models,
         config.strategies,
         config.levels,
-        title=f"Solved rate by level: {config.run_id} ({manifest.seed_split} seeds)",
+        title=f"{config.run_id} ({manifest.seed_split} seeds): solved rate and cell accuracy",
         out=reports / "figures" / f"{config.run_id}_ladder.png",
     )
     markdown = reports / f"{config.run_id}.md"
@@ -59,13 +59,15 @@ def render(
             "",
             *_run_table(manifest),
             "",
-            f"![Solved rate by level, one panel per model]({chart})",
+            f"![Solved rate and cell accuracy by level, one column per model]({chart})",
             "",
             "## Solved rate by level",
             "",
             "Context-limited samples are harness failures (the context window cut the model off "
             "before its budget ran out). They are excluded from every column but their own. "
-            "Intervals are 95% Wilson. Levels a ladder never reached are absent, not zero.",
+            "Intervals are 95% Wilson. Levels a ladder never reached are absent, not zero. "
+            "Chance is the cell accuracy a random valid grid would get (1/houses); an answer "
+            "that fails to parse scores 0 cells, so a strategy can land below chance.",
             "",
             *_level_table(levels),
             "",
@@ -128,7 +130,7 @@ def _run_table(manifest: Manifest) -> list[str]:
 
 def _level_table(levels: Sequence[LevelRow]) -> list[str]:
     header = (
-        "| Model | Strategy | Level | Grid | n | Ctx-lim. | Solved | 95% CI | Cell acc. "
+        "| Model | Strategy | Level | Grid | n | Ctx-lim. | Solved | 95% CI | Cell acc. | Chance "
         "| Format OK | Forced | Out tokens | Seconds |"
     )
     lines = [header, _rule(header)]
@@ -147,6 +149,7 @@ def _level_table(levels: Sequence[LevelRow]) -> list[str]:
                     f"{row.solved}/{row.n}",
                     "n/a" if interval is None else f"{interval[0]:.0%}-{interval[1]:.0%}",
                     _percent(row.cell_accuracy),
+                    _percent(row.chance),
                     _percent(row.format_ok),
                     _percent(row.forced_answer),
                     _number(row.output_tokens),

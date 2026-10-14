@@ -11,6 +11,7 @@ from typing import Any
 
 import duckdb
 
+from redline.puzzles.logic_grid import LADDER
 from redline.stats import wilson_interval
 
 _LEVELS = """
@@ -40,6 +41,17 @@ GROUP BY model, strategy
 """
 
 
+def chance_cell_accuracy(level: int) -> float:
+    """Expected cell accuracy of a uniformly random valid grid at this level.
+
+    Each attribute is a random permutation of its values, so every cell is right with
+    probability 1/houses, whatever the number of attributes. A sample whose answer fails to
+    parse scores 0, so a strategy's mean can fall below this.
+    """
+    houses, _ = LADDER[level]
+    return 1 / houses
+
+
 @dataclass(frozen=True)
 class LevelRow:
     model: str
@@ -57,6 +69,11 @@ class LevelRow:
     @property
     def solved_rate(self) -> float | None:
         return self.solved / self.n if self.n else None
+
+    @property
+    def chance(self) -> float:
+        """Cell accuracy a random valid grid would get here."""
+        return chance_cell_accuracy(self.level)
 
     @property
     def interval(self) -> tuple[float, float] | None:
