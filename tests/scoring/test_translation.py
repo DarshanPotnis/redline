@@ -1,4 +1,5 @@
-"""Misread diagnosis: wrong (false on the solution) and missed (true clue not translated)."""
+"""Misread diagnosis: translated clues are exact, inferred or wrong; stated clues are captured,
+entailed or missed; malformed items are dropped and counted."""
 
 import json
 from pathlib import Path
@@ -10,11 +11,17 @@ from inspect_ai.model import ChatMessage, ModelOutput, get_model
 
 from redline.puzzles.logic_grid import generate
 from redline.puzzles.logic_grid.model import (
+    AtClue,
     Clue,
+    ImmediatelyLeftClue,
     LeftOfClue,
     NextToClue,
+    NotAtClue,
     NotSameHouseClue,
+    Ref,
     SameHouseClue,
+    Solution,
+    Spec,
 )
 from redline.scoring.translation import canonical, diagnose
 from redline.tasks.logic_grid import logic_grid, logic_grid_samples
@@ -30,8 +37,10 @@ def with_kind(kind: type, seeds: range = range(50)) -> tuple[int, int]:
 
 def test_the_exact_translation_has_nothing_wrong_or_missed() -> None:
     p = generate(3, 0)
-    diagnosis = diagnose(list(p.clues), list(p.clues), p.solution)
-    assert (diagnosis.wrong, diagnosis.missed) == ((), ())
+    diagnosis = diagnose(p.spec, list(p.clues), list(p.clues), p.solution)
+    every = tuple(range(1, len(p.clues) + 1))
+    assert (diagnosis.exact, diagnosis.captured) == (every, every)
+    assert diagnosis.inferred == diagnosis.wrong == diagnosis.entailed == diagnosis.missed == ()
 
 
 def test_a_flipped_left_of_is_wrong_and_its_clue_missed() -> None:
@@ -40,7 +49,7 @@ def test_a_flipped_left_of_is_wrong_and_its_clue_missed() -> None:
     clue = p.clues[i]
     assert isinstance(clue, LeftOfClue)
     misread = [*p.clues[:i], LeftOfClue(a=clue.b, b=clue.a), *p.clues[i + 1 :]]
-    diagnosis = diagnose(misread, list(p.clues), p.solution)
+    diagnosis = diagnose(p.spec, misread, list(p.clues), p.solution)
     assert diagnosis.wrong == (i + 1,)
     assert diagnosis.missed == (i + 1,)
 
@@ -53,7 +62,7 @@ def test_symmetric_clues_in_either_order_are_not_missed(kind: type) -> None:
         for clue in p.clues
     ]
     assert swapped != list(p.clues)
-    diagnosis = diagnose(swapped, list(p.clues), p.solution)
+    diagnosis = diagnose(p.spec, swapped, list(p.clues), p.solution)
     assert (diagnosis.wrong, diagnosis.missed) == ((), ())
 
 
@@ -64,13 +73,76 @@ def test_left_of_is_not_symmetric() -> None:
 
 
 def test_an_omission_is_missed_but_not_wrong() -> None:
+    # Clue sets are minimal, so the other clues never entail the one left out.
     p = generate(2, 0)
-    diagnosis = diagnose(list(p.clues[1:]), list(p.clues), p.solution)
-    assert (diagnosis.wrong, diagnosis.missed) == ((), (1,))
+    diagnosis = diagnose(p.spec, list(p.clues[1:]), list(p.clues), p.solution)
+    assert (diagnosis.wrong, diagnosis.entailed, diagnosis.missed) == ((), (), (1,))
+
+
+# A three-house street with one attribute, for hand-made translations.
+STREET = Spec(houses=3, attributes=(("name", ("Alice", "Bob", "Carol")),))
+IN_ORDER = Solution({"name": ("Alice", "Bob", "Carol")})
+ALICE, BOB, CAROL = (Ref(attribute="name", value=name) for name in ("Alice", "Bob", "Carol"))
+
+
+def test_an_inferred_but_true_clue_is_inferred_not_wrong() -> None:
+    # The pilot's case: "the rabbit owner" rewritten as the name of the person who keeps it.
+    p = generate(3, 0)
+    i, clue = next(
+        (i, clue)
+        for i, clue in enumerate(p.clues)
+        if isinstance(clue, SameHouseClue | NotSameHouseClue | LeftOfClue | NextToClue)
+        and clue.a.attribute != "name"
+    )
+    assert isinstance(clue, SameHouseClue | NotSameHouseClue | LeftOfClue | NextToClue)
+    column = p.solution.root[clue.a.attribute]
+    holder = p.solution.root["name"][column.index(clue.a.value)]
+    rewritten = clue.model_copy(update={"a": Ref(attribute="name", value=holder)})
+    translated = [*p.clues[:i], rewritten, *p.clues[i + 1 :]]
+    diagnosis = diagnose(p.spec, translated, list(p.clues), p.solution)
+    assert diagnosis.inferred == (i + 1,)
+    assert diagnosis.wrong == ()
+
+
+def test_a_weakened_clue_is_inferred_and_its_clue_missed() -> None:
+    # "directly left" written as "somewhere left": true, but it says less.
+    stated = [ImmediatelyLeftClue(a=ALICE, b=BOB)]
+    diagnosis = diagnose(STREET, [LeftOfClue(a=ALICE, b=BOB)], stated, IN_ORDER)
+    assert (diagnosis.inferred, diagnosis.wrong) == ((1,), ())
+    assert (diagnosis.captured, diagnosis.entailed, diagnosis.missed) == ((), (), (1,))
+
+
+@pytest.mark.parametrize(
+    ("translated", "stated"),
+    [
+        pytest.param(
+            [AtClue(ref=CAROL, house=3)],
+            [NotAtClue(ref=CAROL, house=1), NotAtClue(ref=CAROL, house=2)],
+            id="at-for-two-not-ats",
+        ),
+        pytest.param(
+            [LeftOfClue(a=ALICE, b=BOB), NextToClue(a=ALICE, b=BOB)],
+            [ImmediatelyLeftClue(a=ALICE, b=BOB)],
+            id="left-of-and-next-to-for-directly-left",
+        ),
+    ],
+)
+def test_an_equivalent_paraphrase_is_entailed(translated: list[Clue], stated: list[Clue]) -> None:
+    diagnosis = diagnose(STREET, translated, stated, IN_ORDER)
+    assert diagnosis.inferred == tuple(range(1, len(translated) + 1))
+    assert diagnosis.entailed == tuple(range(1, len(stated) + 1))
+    assert diagnosis.missed == diagnosis.wrong == ()
+
+
+def test_a_contradictory_translation_entails_nothing() -> None:
+    translated = [AtClue(ref=ALICE, house=1), AtClue(ref=ALICE, house=2)]
+    diagnosis = diagnose(STREET, translated, [NotAtClue(ref=BOB, house=1)], IN_ORDER)
+    assert diagnosis.wrong == (2,)
+    assert (diagnosis.entailed, diagnosis.missed) == ((), (1,))
 
 
 def test_translation_verifier_in_an_eval(tmp_path: Path) -> None:
-    samples = logic_grid_samples([3], 3)
+    samples = logic_grid_samples([3], 4)
 
     def clues_of(sample: Sample) -> list[dict[str, object]]:
         clues: list[dict[str, object]] = (sample.metadata or {})["hidden"]["clues"]
@@ -84,11 +156,14 @@ def test_translation_verifier_in_an_eval(tmp_path: Path) -> None:
             out.append(clue)
         return out
 
-    exact, misread, garbage = samples
+    exact, misread, garbage, padded = samples
+    # The pilot's malformed item: not_at in the two-ref shape.
+    bad_item = {"kind": "not_at", "a": {"attribute": "name", "value": "Bob"}, "b": {"house": 3}}
     replies = {
         str(exact.input): json.dumps(clues_of(exact)),
         str(misread.input): json.dumps(flipped(misread)),
         str(garbage.input): "The answer is obviously house 2.",
+        str(padded.input): json.dumps([*clues_of(padded), bad_item]),
     }
 
     def respond(messages: list[ChatMessage], *_: object) -> ModelOutput:
@@ -98,7 +173,7 @@ def test_translation_verifier_in_an_eval(tmp_path: Path) -> None:
 
     [log] = inspect_ai.eval(
         logic_grid,
-        task_args={"levels": "3", "n_seeds": 3, "strategy": "z3_translate"},
+        task_args={"levels": "3", "n_seeds": 4, "strategy": "z3_translate"},
         model=get_model("mockllm/model", custom_outputs=respond),
         log_dir=str(tmp_path),
         display="none",
@@ -125,6 +200,27 @@ def test_translation_verifier_in_an_eval(tmp_path: Path) -> None:
     assert garbage_scores["translation_verifier"].value["status_parse_error"] == 1.0
     assert garbage_scores["grid_verifier"].value["format_ok"] == 0.0
 
+    padded_scores = by_id[padded.id]
+    padded_translation = padded_scores["translation_verifier"]
+    assert padded_scores["grid_verifier"].value["solved"] == 1.0  # the real clues still solve it
+    assert padded_translation.value["status_unique"] == 1.0
+    assert padded_translation.value["translation_exact"] == 0.0
+    assert padded_translation.metadata is not None
+    n_clues = len(clues_of(padded))
+    assert padded_translation.metadata["malformed_items"] == [n_clues + 1]
+    assert {key: padded_translation.metadata[key] for key in COUNTS} == {
+        "n_exact": n_clues,
+        "n_inferred": 0,
+        "n_wrong": 0,
+        "n_malformed": 1,
+        "n_captured": n_clues,
+        "n_entailed": 0,
+        "n_missed": 0,
+    }
+
     assert log.results is not None
     exact_mean = next(s for s in log.results.scores if s.name == "translation_exact")
-    assert exact_mean.metrics["mean"].value == pytest.approx(1 / 3)
+    assert exact_mean.metrics["mean"].value == pytest.approx(1 / 4)
+
+
+COUNTS = ("n_exact", "n_inferred", "n_wrong", "n_malformed", "n_captured", "n_entailed", "n_missed")

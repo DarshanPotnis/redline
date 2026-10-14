@@ -83,6 +83,18 @@ def solutions_z3(spec: Spec, clues: Sequence[Clue], cap: int) -> list[Solution]:
     return found
 
 
+def entails(spec: Spec, premises: Sequence[Clue], conclusion: Clue) -> bool:
+    """Whether every grid that satisfies the premises satisfies the conclusion: premises and
+    not-conclusion together are unsat. Vacuously true when the premises alone are unsat."""
+    encoding = encode(spec, [*premises, conclusion], z3.main_ctx())
+    solver = z3.Solver()
+    solver.add(*encoding.structure, *encoding.clues[:-1], z3.Not(encoding.clues[-1]))
+    result = solver.check()
+    if result == z3.unknown:
+        raise RuntimeError(f"z3 returned unknown: {solver.reason_unknown()}")
+    return bool(result == z3.unsat)
+
+
 def _solution(spec: Spec, houses: dict[tuple[str, str], int]) -> Solution:
     """Each attribute's values ordered by the house that holds them."""
     return Solution(

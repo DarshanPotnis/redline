@@ -24,7 +24,7 @@ from redline.puzzles.logic_grid.model import (
 )
 from redline.puzzles.logic_grid.solve_backtrack import count_solutions
 from redline.puzzles.logic_grid.solve_bruteforce import count_solutions_bruteforce
-from redline.puzzles.logic_grid.solve_z3 import count_solutions_z3
+from redline.puzzles.logic_grid.solve_z3 import count_solutions_z3, entails
 from redline.puzzles.logic_grid.vocab import VOCAB
 
 HOUSE_KINDS = [AtClue, NotAtClue]
@@ -83,6 +83,18 @@ def test_z3_matches_brute_force(case: tuple[Spec, list[Clue]]) -> None:
     spec, clues = case
     expected = min(Z3_CAP, count_solutions_bruteforce(spec, clues))
     assert count_solutions_z3(spec, clues, cap=Z3_CAP) == expected
+
+
+@given(clue_sets(levels=(1, 2)), st.data())
+def test_entailment_matches_brute_force(case: tuple[Spec, list[Clue]], data: st.DataObject) -> None:
+    # The premises entail a clue exactly when adding it leaves their solutions unchanged
+    # (vacuously so when they have none).
+    spec, premises = case
+    conclusion = data.draw(any_clue(spec))
+    expected = count_solutions_bruteforce(spec, premises) == count_solutions_bruteforce(
+        spec, [*premises, conclusion]
+    )
+    assert entails(spec, premises, conclusion) == expected
 
 
 @pytest.mark.parametrize("level", [1, 2])

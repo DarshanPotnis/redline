@@ -2,11 +2,16 @@
 
 One attempt; retrying with solver feedback is the Phase 2 agentic version. Only a unique solution
 becomes an answer: an unsat or ambiguous translation answers nothing rather than guess.
+
+The translation is parsed item by item. A malformed item (not a clue, or naming a value or house
+the puzzle doesn't have) is dropped and recorded, and the rest go to Z3, so the status is what Z3
+sees. It is a parse error only when nothing reaches Z3: no JSON list, or no well-formed item.
 """
 
 import json
 from collections.abc import Sequence
-from typing import Literal
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from inspect_ai.model import ChatMessage, ChatMessageSystem, ChatMessageUser
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -72,7 +77,14 @@ CLUE_FORMAT = "\n".join(
         ),
     ]
 )
-_CLUES = TypeAdapter(list[Clue])
+_CLUE: TypeAdapter[Clue] = TypeAdapter(Clue)
+
+
+@dataclass(frozen=True)
+class Translation:
+    clues: tuple[Clue, ...]  # the well-formed items, in the spec's spelling, in order
+    malformed: tuple[tuple[int, str], ...]  # (1-based item number in the model's list, why)
+    error: str | None = None  # why nothing reached Z3; None when some clue did
 
 
 def build_messages(puzzle: PublicPuzzle) -> list[ChatMessage]:
@@ -90,22 +102,27 @@ def build_messages(puzzle: PublicPuzzle) -> list[ChatMessage]:
 async def run(puzzle: PublicPuzzle, model: BudgetedModel) -> StrategyResult:
     spec = Spec.model_validate(puzzle.structure)
     output = await model.generate(build_messages(puzzle), forcing_message=FORCE_TRANSLATION)
-    translated = parse_translation(output.completion, spec)
-    if isinstance(translated, str):
+    translation = parse_translation(output.completion, spec)
+    malformed: list[JsonValue] = [
+        {"item": item, "reason": reason} for item, reason in translation.malformed
+    ]
+    if translation.error is not None:
         return StrategyResult(
             final_text="",
             artifacts={
                 "translation_status": "parse_error",
                 "translated_clues": None,
-                "parse_error": translated,
+                "malformed": malformed,
+                "parse_error": translation.error,
             },
         )
-    status, grid = solve_translation(spec, translated)
+    status, grid = solve_translation(spec, translation.clues)
     return StrategyResult(
         final_text=answer_json(grid) if grid is not None else "",
         artifacts={
             "translation_status": status,
-            "translated_clues": [clue.model_dump(mode="json") for clue in translated],
+            "translated_clues": [clue.model_dump(mode="json") for clue in translation.clues],
+            "malformed": malformed,
             "parse_error": None,
         },
     )
@@ -119,22 +136,32 @@ def solve_translation(spec: Spec, clues: Sequence[Clue]) -> tuple[Status, Soluti
     return ("unsat" if not found else "ambiguous"), None
 
 
-def parse_translation(text: str, spec: Spec) -> list[Clue] | str:
-    """The translated clues, with refs in the spec's own spelling; or why they can't be used."""
+def parse_translation(text: str, spec: Spec) -> Translation:
+    """The last JSON list in `text`, item by item, with refs in the spec's own spelling."""
     raw = last_json(text, "[")
     if raw is None:
-        return "no JSON list in the response"
+        return Translation((), (), "no JSON list in the response")
+    clues: list[Clue] = []
+    malformed: list[tuple[int, str]] = []
+    for number, item in enumerate(raw, start=1):
+        clue = _parse_item(item, spec)
+        if isinstance(clue, str):
+            malformed.append((number, clue))
+        else:
+            clues.append(clue)
+    error = None if clues else f"no well-formed clue in the list ({len(malformed)} malformed)"
+    return Translation(tuple(clues), tuple(malformed), error)
+
+
+def _parse_item(item: Any, spec: Spec) -> Clue | str:
+    """One clue in the spec's spelling, or why the item isn't one."""
     try:
-        clues = _CLUES.validate_python(raw)
+        clue = _CLUE.validate_python(item)
     except ValidationError as error:
-        return f"not a list of clues ({error.error_count()} validation errors)"
-    canonical: list[Clue] = []
-    for clue in clues:
-        fixed = _in_spec(clue, spec)
-        if isinstance(fixed, str):
-            return fixed
-        canonical.append(fixed)
-    return canonical
+        first = error.errors()[0]
+        where = ".".join(str(part) for part in first["loc"])
+        return f"not a clue ({error.error_count()} errors; {where}: {first['msg']})"
+    return _in_spec(clue, spec)
 
 
 def _in_spec(clue: Clue, spec: Spec) -> Clue | str:

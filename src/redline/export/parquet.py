@@ -39,7 +39,14 @@ SCHEMA = pa.schema(
         ("cell_accuracy", pa.float64()),
         ("translation_exact", pa.bool_()),  # null unless the strategy translates
         ("translation_status", pa.string()),
+        # translated clues: exact, inferred (true, not stated), wrong; items dropped as malformed
+        ("n_exact", pa.int64()),
+        ("n_inferred", pa.int64()),
         ("n_wrong", pa.int64()),
+        ("n_malformed", pa.int64()),
+        # stated clues: captured (translated exactly), entailed (implied), missed
+        ("n_captured", pa.int64()),
+        ("n_entailed", pa.int64()),
         ("n_missed", pa.int64()),
         ("input_tokens", pa.int64()),  # summed over every call of the sample
         ("output_tokens", pa.int64()),
@@ -51,6 +58,15 @@ SCHEMA = pa.schema(
     ]
 )
 FEATURE_PREFIX = "feature_"
+TRANSLATION_COUNTS = (
+    "n_exact",
+    "n_inferred",
+    "n_wrong",
+    "n_malformed",
+    "n_captured",
+    "n_entailed",
+    "n_missed",
+)
 
 
 def to_parquet(run_dir: Path, out_root: Path = DATA_ROOT) -> Path:
@@ -150,8 +166,10 @@ COLUMNS = [
     SampleColumn(
         "translation_status", path=_metadata("translation_verifier", "translation_status")
     ),
-    SampleColumn("n_wrong", path=_metadata("translation_verifier", "n_wrong")),
-    SampleColumn("n_missed", path=_metadata("translation_verifier", "n_missed")),
+    *(
+        SampleColumn(count, path=_metadata("translation_verifier", count))
+        for count in TRANSLATION_COUNTS
+    ),
     SampleColumn("input_tokens", path=_usage("input_tokens")),
     SampleColumn("output_tokens", path=_usage("output_tokens")),
     SampleColumn("reasoning_tokens", path=_usage("reasoning_tokens")),

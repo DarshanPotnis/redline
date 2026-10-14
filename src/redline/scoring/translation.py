@@ -1,8 +1,12 @@
-"""Misread diagnosis for translating strategies: the model's clues against the true clues.
+"""Misread diagnosis for translating strategies: the model's clues against the stated clues.
 
-A translated clue that is false on the true solution is a misread (a flipped direction, say). A
-true clue with no equal translation was missed. An exact translation has neither; joined with a
-direct answer by sample id (1e), it separates misreading a puzzle from misreasoning about it.
+Each well-formed translated clue is exact (canonically equal to a stated clue), inferred (true on
+the solution but not stated, like "the rabbit owner" rewritten as the person's name, or "directly
+left" weakened to "left of") or wrong (false on the solution: a misread). Each stated clue is
+captured (an exact translation exists), entailed (the translated set implies it, checked with Z3)
+or missed. Malformed items, dropped by the strategy, are counted too. An exact translation has
+nothing wrong, missed or malformed; joined with a direct answer by sample id (1g), it separates
+misreading a puzzle from misreasoning about it.
 """
 
 from collections.abc import Sequence
@@ -19,7 +23,9 @@ from redline.puzzles.logic_grid.model import (
     NotSameHouseClue,
     SameHouseClue,
     Solution,
+    Spec,
 )
+from redline.puzzles.logic_grid.solve_z3 import count_solutions_z3, entails
 
 STATUSES = ("unique", "ambiguous", "unsat", "parse_error")
 _CLUES = TypeAdapter(list[Clue])
@@ -27,8 +33,14 @@ _CLUES = TypeAdapter(list[Clue])
 
 @dataclass(frozen=True)
 class Diagnosis:
-    wrong: tuple[int, ...]  # 1-based positions in the translation of clues false on the solution
-    missed: tuple[int, ...]  # 1-based numbers of the true clues that no translated clue equals
+    # translated clues, by 1-based position in the translation
+    exact: tuple[int, ...]
+    inferred: tuple[int, ...]
+    wrong: tuple[int, ...]
+    # stated clues, by their 1-based number in the puzzle
+    captured: tuple[int, ...]
+    entailed: tuple[int, ...]
+    missed: tuple[int, ...]
 
 
 def canonical(clue: Clue) -> Clue:
@@ -39,14 +51,36 @@ def canonical(clue: Clue) -> Clue:
     return clue
 
 
-def diagnose(translated: Sequence[Clue], true: Sequence[Clue], solution: Solution) -> Diagnosis:
-    written = {canonical(clue).model_dump_json() for clue in translated}
-    return Diagnosis(
-        wrong=tuple(n for n, clue in enumerate(translated, 1) if not holds(clue, solution)),
-        missed=tuple(
-            n for n, clue in enumerate(true, 1) if canonical(clue).model_dump_json() not in written
-        ),
+def diagnose(
+    spec: Spec, translated: Sequence[Clue], stated: Sequence[Clue], solution: Solution
+) -> Diagnosis:
+    stated_keys = {_key(clue) for clue in stated}
+    written = {_key(clue) for clue in translated}
+    exact = tuple(n for n, clue in enumerate(translated, 1) if _key(clue) in stated_keys)
+    inferred = tuple(
+        n
+        for n, clue in enumerate(translated, 1)
+        if _key(clue) not in stated_keys and holds(clue, solution)
     )
+    wrong = tuple(n for n, clue in enumerate(translated, 1) if not holds(clue, solution))
+    # A contradictory translation would entail every clue, so entailment needs a satisfiable
+    # one. With nothing wrong, the true solution satisfies it; otherwise Z3 decides.
+    consistent = bool(translated) and (not wrong or count_solutions_z3(spec, translated, 1) == 1)
+    captured: list[int] = []
+    entailed: list[int] = []
+    missed: list[int] = []
+    for n, clue in enumerate(stated, 1):
+        if _key(clue) in written:
+            captured.append(n)
+        elif consistent and entails(spec, translated, clue):
+            entailed.append(n)
+        else:
+            missed.append(n)
+    return Diagnosis(exact, inferred, wrong, tuple(captured), tuple(entailed), tuple(missed))
+
+
+def _key(clue: Clue) -> str:
+    return canonical(clue).model_dump_json()
 
 
 @scorer(
@@ -60,26 +94,43 @@ def translation_verifier() -> Scorer:
 
     async def score(state: TaskState, target: Target) -> Score:
         artifacts = state.metadata["strategy_run"]["artifacts"]
+        hidden = state.metadata["hidden"]
         status = artifacts["translation_status"]
         translated = _CLUES.validate_python(artifacts["translated_clues"] or [])
-        true = _CLUES.validate_python(state.metadata["hidden"]["clues"])
-        diagnosis = diagnose(translated, true, Solution.model_validate_json(target.text))
-        exact = status != "parse_error" and not diagnosis.wrong and not diagnosis.missed
+        malformed = [entry["item"] for entry in artifacts.get("malformed", [])]
+        stated = _CLUES.validate_python(hidden["clues"])
+        d = diagnose(
+            Spec.model_validate(hidden["spec"]),
+            translated,
+            stated,
+            Solution.model_validate_json(target.text),
+        )
+        exact = not d.wrong and not d.missed and not malformed
         return Score(
             value={
                 "translation_exact": float(exact),
                 **{f"status_{name}": float(status == name) for name in STATUSES},
             },
             explanation=(
-                f"{status}: {len(diagnosis.wrong)} wrong, {len(diagnosis.missed)} missed of "
-                f"{len(true)} clues"
+                f"{status}: of {len(translated)} translated clues {len(d.exact)} exact, "
+                f"{len(d.inferred)} inferred, {len(d.wrong)} wrong ({len(malformed)} malformed "
+                f"items dropped); of {len(stated)} stated clues {len(d.captured)} captured, "
+                f"{len(d.entailed)} entailed, {len(d.missed)} missed"
             ),
             metadata={
                 "translation_status": status,
-                "n_wrong": len(diagnosis.wrong),
-                "n_missed": len(diagnosis.missed),
-                "wrong_clues": list(diagnosis.wrong),
-                "missed_clues": list(diagnosis.missed),
+                "n_exact": len(d.exact),
+                "n_inferred": len(d.inferred),
+                "n_wrong": len(d.wrong),
+                "n_malformed": len(malformed),
+                "n_captured": len(d.captured),
+                "n_entailed": len(d.entailed),
+                "n_missed": len(d.missed),
+                "inferred_clues": list(d.inferred),
+                "wrong_clues": list(d.wrong),
+                "malformed_items": malformed,
+                "entailed_clues": list(d.entailed),
+                "missed_clues": list(d.missed),
             },
         )
 

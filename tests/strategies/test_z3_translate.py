@@ -88,17 +88,45 @@ def test_contradictory_clues_are_unsat_and_answer_nothing() -> None:
     ],
 )
 def test_unusable_translations_are_parse_errors(reply: str) -> None:
+    # Nothing reaches Z3: no JSON list, or a list with no well-formed clue in it.
     result = translate(generate(1, 0), reply)
     assert result.artifacts["translation_status"] == "parse_error"
     assert result.artifacts["translated_clues"] is None
     assert result.final_text == ""
 
 
-def test_a_house_outside_the_puzzle_is_a_parse_error() -> None:
+def test_a_house_outside_the_puzzle_is_malformed() -> None:
     p = generate(1, 0)
     name, values = p.spec.attributes[0]
     reply = json.dumps([{"kind": "at", "ref": {"attribute": name, "value": values[0]}, "house": 9}])
-    assert translate(p, reply).artifacts["translation_status"] == "parse_error"
+    result = translate(p, reply)
+    assert result.artifacts["translation_status"] == "parse_error"
+    assert result.artifacts["malformed"] == [{"item": 1, "reason": "house 9 is not one of 1..3"}]
+
+
+# The pilot's malformed item: not_at written with two refs instead of a ref and a house.
+TWO_REF_NOT_AT = {"kind": "not_at", "a": {"attribute": "name", "value": "Bob"}, "b": {"house": 3}}
+
+
+def test_a_malformed_item_is_dropped_and_counted() -> None:
+    p = generate(3, 0)
+    reply = json.dumps([*json.loads(clues_json(p.clues)), TWO_REF_NOT_AT])
+    result = translate(p, reply)
+    assert result.artifacts["translation_status"] == "unique"  # the real clues still suffice
+    assert result.final_text == answer_json(p.solution)
+    assert result.artifacts["translated_clues"] == json.loads(clues_json(p.clues))
+    [malformed] = result.artifacts["malformed"]
+    assert malformed["item"] == len(p.clues) + 1
+    assert "not a clue" in malformed["reason"]
+
+
+def test_a_malformed_item_in_place_of_a_needed_clue_leaves_it_ambiguous() -> None:
+    p = generate(3, 0)
+    reply = json.dumps([TWO_REF_NOT_AT, *json.loads(clues_json(p.clues[1:]))])
+    result = translate(p, reply)
+    assert result.artifacts["translation_status"] == "ambiguous"
+    assert [entry["item"] for entry in result.artifacts["malformed"]] == [1]
+    assert result.final_text == ""
 
 
 def test_spelling_is_matched_like_the_grid_parser() -> None:
