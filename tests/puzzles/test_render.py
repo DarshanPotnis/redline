@@ -50,10 +50,10 @@ RED = Ref(attribute="color", value="red")
         (AtClue(ref=CAT, house=2), "The person who keeps the cat lives in house 2."),
         (NotAtClue(ref=ALICE, house=1), "Alice does not live in house 1."),
         (SameHouseClue(a=ALICE, b=CAT), "Alice is the person who keeps the cat."),
-        (NotSameHouseClue(a=RED, b=ALICE), "The person in the red house is not Alice."),
+        (NotSameHouseClue(a=RED, b=ALICE), "The person whose favorite color is red is not Alice."),
         (
             LeftOfClue(a=ALICE, b=RED),
-            "Alice lives somewhere to the left of the person in the red house.",
+            "Alice lives somewhere to the left of the person whose favorite color is red.",
         ),
         (
             ImmediatelyLeftClue(a=CAT, b=ALICE),

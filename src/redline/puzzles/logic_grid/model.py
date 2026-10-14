@@ -8,6 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 from redline.puzzles.base import PuzzleInstance
 
 GENERATOR_NAME = "logic_grid"
+# The version of the puzzle text. Puzzles (spec, clues, solution) are unchanged across versions;
+# only their wording changes. 1: 1a-1e (pilot-1e). 2: 1e.1, color as "favorite color" instead of
+# "the person in the blue house", which read as a house position.
+GENERATOR_VERSION = 2
 
 
 class _Frozen(BaseModel):
@@ -192,6 +196,7 @@ class LogicGridPuzzle(_Frozen):
             answer=self.solution.model_dump(mode="json"),
             instance={
                 **self.model_dump(mode="json", include={"spec", "clues"}),
+                "generator_version": GENERATOR_VERSION,
                 "features_method": method(),
             },
             search_space=self.spec.search_space,

@@ -18,6 +18,7 @@ from redline.puzzles.logic_grid import GENERATOR, LADDER, LogicGridPuzzle, gener
 from redline.puzzles.logic_grid.clues import holds
 from redline.puzzles.logic_grid.difficulty import method
 from redline.puzzles.logic_grid.generate import default_counter, draw_spec
+from redline.puzzles.logic_grid.model import GENERATOR_VERSION
 from redline.puzzles.logic_grid.render import answer_format
 from redline.puzzles.logic_grid.solve_backtrack import count_solutions
 from redline.puzzles.logic_grid.solve_bruteforce import count_solutions_bruteforce
@@ -141,42 +142,51 @@ def test_generation_ignores_the_string_hash_seed() -> None:
     assert puzzles_1 == puzzles_2
 
 
-def identity_json(instance: PuzzleInstance) -> str:
-    """The puzzle's identity: the instance minus its difficulty features (Z3 statistics may
-    differ across platforms), its answer format (pinned on its own in test_render.py) and its
-    public structure (a copy of the spec, which the identity already holds)."""
-    return instance.model_dump_json(
-        exclude={
-            "features": True,
-            "answer_format": True,
-            "structure": True,
-            "instance": {"features_method": True},
-        }
-    )
+def sha256(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
-# SHA-256 of each instance's identity JSON (text included). CPython only promises that random()
-# stays stable across versions, so a Python upgrade or a code change could silently re-map
-# (level, seed) to different puzzles. If a change is intended, update these digests. Levels 1-4
-# are unchanged since 1a.
-GOLDEN = {
-    (1, 0): "703b68dbd37b51a6232ef5feb5eb8f962c0710e569650879db4f70736694d331",
-    (2, 1): "0c8263ca0a15dc2ae0ef1309f7fe53a89724be4ae1c24a77ce8c0272691b8ee2",
-    (3, 2): "f87fba3e1d3069823b7a8a019783055c36946fa2419ec991d5b79081ad726057",
-    (4, 3): "fc7cec3f993b314988efb6eecdb67f5d9cd13a2c3a248fe4837d86778428ba92",
-    (5, 0): "a2dfd4635a0f4dbb325b6cea54d3da72836181f32c8808ba5f616e0ea36c1e06",
-    (6, 0): "1f233610f616207097c463b463d458c537b44000ea9bb66712b0553d0e15cd77",
-    (7, 0): "4045ca5d6d94c38dd5146b9d7c3e7f4af09233b151c1f6df619213fd24f910fb",
+# SHA-256 of each puzzle's structure: spec, clues and solution. CPython only promises that
+# random() stays stable across versions, so a Python upgrade or a code change could silently
+# re-map (level, seed) to different puzzles. These must never change: levels 1-4 are unchanged
+# since 1a, and generator text v2 (1e.1) left every one byte-identical.
+STRUCTURE_GOLDEN = {
+    (1, 0): "af3d39c26adedc58a2f243ffbcafea3f505372f5af1a8d31b52160027e0fc77a",
+    (2, 1): "0af0305a926139cde7aff8e416951239c390bd708da8e88a67d93c840b1909ca",
+    (3, 2): "17a07effe1b8b1724ec67b56bdf093a06d91ee9c6dd2e6b31b79c1d49db3f6c8",
+    (4, 3): "1cf757091a59bc9c5e7be8e57844f64a14ff123d952baa3232817b11155e3215",
+    (5, 0): "6df386c923710b37b9821337e645a4a8e7c8a11ffc32924df57aecc74ef37b94",
+    (6, 0): "eadd59127becc0bf83a7d504de8d5b66c81e57dc38ab9c673d4c496779f2e2e0",
+    (7, 0): "c55c84f7084b23bd9716a62bb3d4d6aea53369119ec42207877b98515b728575",
 }
 
+# SHA-256 of each puzzle's text. A wording change updates these and nothing above. Last updated
+# by "fix(puzzles): unambiguous color phrasing (generator text v2)"; (1, 0) and (4, 3) have no
+# color attribute, so their text did not change.
+TEXT_GOLDEN = {
+    (1, 0): "aac365c72c9f342768615c48208dc93943e673486fabe5e2426251763298a308",
+    (2, 1): "57b3a7e8308e231766fb28c5fcfefb7b425108989a4c382dd160c3de3a6862d3",
+    (3, 2): "12eb91742e7b2028fd32ed181a9ad082385fae6174e5aee9d6626e79e9cc407d",
+    (4, 3): "04e5697f7cee708f567747359bc58ed04e7790a7b7abcf6d0f91d3bc7af814d5",
+    (5, 0): "7bac1cbb1c070bb76aa7f2c15d6df60273f0a71dae15568add3459fa011e8a2f",
+    (6, 0): "1619d9e075f6b23294f11cba9b4569a182f7ddbb9195b26c1f3e6d1d6ff16020",
+    (7, 0): "5935371a686749457eeab8bc21cddd6cd9ed7b0000666afdb96c29971258e2ca",
+}
+GOLDEN_CASES = [
+    pytest.param(*case, marks=[pytest.mark.slow] if case[0] >= 5 else [])
+    for case in STRUCTURE_GOLDEN
+]
 
-@pytest.mark.parametrize(
-    ("level", "seed"),
-    [pytest.param(*case, marks=[pytest.mark.slow] if case[0] >= 5 else []) for case in GOLDEN],
-)
-def test_puzzle_identity_is_pinned(level: int, seed: int) -> None:
-    payload = identity_json(puzzle(level, seed).to_instance())
-    assert hashlib.sha256(payload.encode()).hexdigest() == GOLDEN[level, seed]
+
+@pytest.mark.parametrize(("level", "seed"), GOLDEN_CASES)
+def test_puzzle_structure_is_pinned(level: int, seed: int) -> None:
+    structure = puzzle(level, seed).model_dump_json(include={"spec", "clues", "solution"})
+    assert sha256(structure) == STRUCTURE_GOLDEN[level, seed]
+
+
+@pytest.mark.parametrize(("level", "seed"), GOLDEN_CASES)
+def test_puzzle_text_is_pinned(level: int, seed: int) -> None:
+    assert sha256(render(puzzle(level, seed))) == TEXT_GOLDEN[level, seed]
 
 
 def test_search_space_strictly_increases_with_level() -> None:
@@ -200,7 +210,8 @@ def test_instance_holds_text_key_hidden_puzzle_and_features(level: int, seed: in
         text=instance.text, answer_format=answer_format(p.spec), structure=instance.structure
     )
     assert instance.answer == p.solution.model_dump(mode="json")
-    assert list(instance.instance) == ["spec", "clues", "features_method"]
+    assert list(instance.instance) == ["spec", "clues", "generator_version", "features_method"]
+    assert instance.instance["generator_version"] == GENERATOR_VERSION == 2
     assert instance.instance["features_method"] == method()
     assert instance.features["n_clues"] == len(p.clues)
     assert instance.search_space == math.factorial(houses) ** attributes

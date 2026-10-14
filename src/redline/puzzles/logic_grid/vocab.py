@@ -15,14 +15,17 @@ class Attribute:
 
 
 # Name is always first and always used. Values carry no world-knowledge links (no cat/milk or
-# fish/water pairs), and none is a substring of another, so answers parse unambiguously.
+# fish/water pairs), and none is a substring of another, so answers parse unambiguously. No
+# template, label or value uses a position word ("house", "left", "right", "next", a number):
+# those belong to the position clues alone. Text v1 said "the person in the blue house", which
+# models read as a house position (pilot-1e); v2 says favorite color.
 VOCAB: tuple[Attribute, ...] = (
     Attribute("name", "Name", ("Alice", "Bob", "Carol", "Dave", "Erin", "Frank"), "{}"),
     Attribute(
         "color",
-        "House color",
+        "Favorite color",
         ("red", "green", "blue", "yellow", "white", "purple"),
-        "the person in the {} house",
+        "the person whose favorite color is {}",
     ),
     Attribute(
         "pet",

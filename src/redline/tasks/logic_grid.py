@@ -77,6 +77,7 @@ def _sample(level: int, seed: int) -> Sample:
             "level": level,
             "seed": seed,
             "generator": instance.generator,
+            "generator_version": instance.instance["generator_version"],
             **{f"feature_{name}": value for name, value in instance.features.items()},
         },
     )

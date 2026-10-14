@@ -1,8 +1,11 @@
 """Vocabulary invariants that keep rendering and answer parsing unambiguous."""
 
 import itertools
+import re
 
-from redline.puzzles.logic_grid.vocab import VOCAB
+import pytest
+
+from redline.puzzles.logic_grid.vocab import VOCAB, Attribute
 
 VALUES = [value for attribute in VOCAB for value in attribute.values]
 
@@ -24,3 +27,14 @@ def test_no_value_is_a_substring_of_another() -> None:
 
 def test_each_template_has_one_placeholder() -> None:
     assert all(attribute.template.count("{}") == 1 for attribute in VOCAB)
+
+
+# Words that name or imply a house position. They belong to the position clues alone; v1's
+# "the person in the blue house" was read as a house position (pilot-1e).
+POSITION_WORDS = re.compile(r"\b(house|houses|left|right|next)\b|\d", re.IGNORECASE)
+
+
+@pytest.mark.parametrize("attribute", VOCAB, ids=lambda attribute: attribute.name)
+def test_no_template_label_or_value_names_a_position(attribute: Attribute) -> None:
+    for text in (attribute.template, attribute.label, *attribute.values):
+        assert not POSITION_WORDS.search(text), f"{attribute.name}: {text!r}"

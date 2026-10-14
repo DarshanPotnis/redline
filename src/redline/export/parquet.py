@@ -34,6 +34,7 @@ SCHEMA = pa.schema(
         ("level", pa.int64()),
         ("seed", pa.int64()),
         ("sample_id", pa.string()),  # the dataset id, e.g. logic_grid/L3/s7: joins strategies
+        ("generator_version", pa.int64()),  # puzzle text version; null before 1e.1 (= 1)
         *((flag, pa.bool_()) for flag in FLAGS),
         ("cell_accuracy", pa.float64()),
         ("translation_exact", pa.bool_()),  # null unless the strategy translates
@@ -142,6 +143,7 @@ COLUMNS = [
     SampleColumn("id", path="id", required=True),
     SampleColumn("level", path="metadata.level", required=True),
     SampleColumn("seed", path="metadata.seed", required=True),
+    SampleColumn("generator_version", path="metadata.generator_version"),
     *(SampleColumn(flag, path=_flag("grid_verifier", flag)) for flag in FLAGS),
     SampleColumn("cell_accuracy", path=_value("grid_verifier", "cell_accuracy")),
     SampleColumn("translation_exact", path=_flag("translation_verifier", "translation_exact")),

@@ -21,6 +21,7 @@ from inspect_ai.model import (
 
 from redline.budget import ANSWER_RESERVE, TOTAL_BUDGET
 from redline.puzzles.base import PublicPuzzle
+from redline.puzzles.logic_grid.model import GENERATOR_VERSION
 from redline.runtime.profiles import profile_for
 from redline.strategies import STRATEGIES, get_strategy
 from redline.strategies.base import BudgetedModel, CallRecord
@@ -213,9 +214,10 @@ def test_samples_carry_ids_public_hidden_and_features() -> None:
     [sample] = logic_grid_samples([2], 1, seed_start=5)
     assert sample.id == "logic_grid/L2/s5"
     metadata = sample.metadata or {}
-    assert {"public", "hidden", "level", "seed", "generator"} <= set(metadata)
+    assert {"public", "hidden", "level", "seed", "generator", "generator_version"} <= set(metadata)
     assert (metadata["level"], metadata["seed"], metadata["generator"]) == (2, 5, "logic_grid")
-    assert set(metadata["hidden"]) == {"spec", "clues", "features_method"}
+    assert metadata["generator_version"] == GENERATOR_VERSION
+    assert set(metadata["hidden"]) == {"spec", "clues", "generator_version", "features_method"}
     assert public(sample).text == sample.input
     assert metadata["feature_n_clues"] == len(metadata["hidden"]["clues"])
     assert set(json.loads(sample.target)) == {

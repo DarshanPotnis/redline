@@ -11,6 +11,7 @@ from conftest import CONTEXT_LIMITED, MockRun
 from redline.export import to_parquet
 from redline.export.parquet import SCHEMA
 from redline.puzzles.logic_grid import GENERATOR
+from redline.puzzles.logic_grid.model import GENERATOR_VERSION
 
 
 @pytest.fixture(scope="module")
@@ -74,3 +75,8 @@ def test_sample_rows_carry_ids_tokens_and_translations(parquet: Path) -> None:
         ("logic_grid/L1/s0", "z3_translate", True, "unique", 300, 120, 1, "stop", "mock", 0),
         ("logic_grid/L1/s1", "z3_translate", True, "unique", 300, 120, 1, "stop", "mock", 1),
     ]
+
+
+def test_rows_record_the_puzzle_text_version(parquet: Path) -> None:
+    versions = duckdb.sql(f"SELECT DISTINCT generator_version FROM '{parquet}'").fetchall()
+    assert versions == [(GENERATOR_VERSION,)]

@@ -54,9 +54,11 @@ All code lives in `src/redline/`.
   - **1c:** Inspect task + verifier + direct and cot strategies (done).
   - **1c.1:** pinned model profiles + truncation-aware scoring (done).
   - **1d:** budgeted strategies with budget forcing, then Z3-translate strategy + misread diagnosis (done).
-  - **1e (CURRENT):** resumable ladder runner, Parquet export, ladder chart and report, local pilot run on dev seeds.
+  - **1e:** resumable ladder runner, Parquet export, ladder chart and report, local pilot run on dev seeds (done; `reports/pilot-1e.md`).
+  - **1e.1 (CURRENT):** fixes from the pilot diagnosis: generator text v2, item-level translation parsing with a finer misread diagnosis, explicit field shapes in the z3_translate prompt; checked on fresh dev seeds 3-9.
   - **1f:** Reasoning Gym adapter.
   - **1g:** full local and Groq runs on test seeds, findings write-up (including the misread-vs-misreasoned verdict).
+  - Generator text v2 (1e.1, `GENERATOR_VERSION` in `model.py`, recorded in every instance, sample and Parquet row): color reads "the person whose favorite color is red" (label "Favorite color"), because v1's "the person in the red house" was read as a house position. Puzzles are byte-identical across versions (the structure digests in `test_generate.py` are pinned; only the text digests moved). v1 is the text pilot-1e ran on. No template, label or value may use a position word ("house", "left", "right", "next", a number); a vocab test enforces it.
   - Generated logic-grid puzzles are fully relational by design: `at` clues are excluded from the generator's candidate pool, but `at` stays in the clue schema for the 1d translations.
   - The generator counts solutions with backtracking up to a search space of 1,000,000 (levels 1-4) and with Z3 above it. Every counter is exact and the generator only branches on "count == 1", so the counter never changes a puzzle.
   - Difficulty features come from `difficulty.measure()`: K=5 Z3 uniqueness proofs, each in a fresh `z3.Context` (a shared context leaks state between runs and makes the statistics irreproducible). Set Z3 options with `solver.set(...)`, never `z3.set_param`.

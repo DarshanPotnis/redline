@@ -67,7 +67,7 @@ def parse_grid(response: str, spec: Spec) -> Grid | ParseError:
     """The last JSON object in `response`, checked against the spec.
 
     Lenient on form: fences and prose around the JSON, house keys "1" or "House 1", attribute
-    names (or their labels, like "House color") and values in any case, with spaces trimmed.
+    names (or their labels, like "Favorite color") and values in any case, with spaces trimmed.
     Strict on content: every house, every attribute, every value from that attribute's list.
     """
     pairs: _Object | None = last_json(response, "{", _DECODER)
