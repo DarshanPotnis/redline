@@ -15,11 +15,12 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from inspect_ai import eval_set
+from inspect_ai import Task, eval_set
 from inspect_ai.log import EvalSampleSummary, read_eval_log_sample_summaries
 from inspect_ai.model import Model
 from inspect_ai.util import DisplayType
 
+from redline.puzzles.registry import get_generator
 from redline.runner.manifest import (
     MANIFEST,
     GitState,
@@ -37,9 +38,11 @@ from redline.runner.manifest import (
 )
 from redline.runner.ollama import ModelMemory, Ollama
 from redline.runtime.profiles import ModelProfile, profile_for
+from redline.scoring.harness import ANSWER_SCORERS
 from redline.seeds import seed_split
 from redline.strategies import get_strategy
-from redline.tasks.logic_grid import logic_grid, parse_levels
+from redline.tasks.logic_grid import TRANSLATING, logic_grid, parse_levels
+from redline.tasks.reasoning_gym import reasoning_gym
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +64,7 @@ class Cell:
     n_seeds: int
     seed_start: int
     log_dir: Path
+    generator: str = "logic_grid"
 
 
 @dataclass(frozen=True)
@@ -92,12 +96,18 @@ def cell_dir(run_dir: Path, model: str, strategy: str, level: int) -> Path:
 
 
 def validate(config: RunConfig) -> None:
-    """Every model has a profile, every strategy and level exists, and the seeds are one split."""
+    """Every model has a profile, every strategy and level exists for the generator, and the
+    seeds are one split."""
+    generator = get_generator(config.generator)
     for model in config.models:
         profile_for(model)
     for strategy in config.strategies:
         get_strategy(strategy)
-    parse_levels(list(config.levels))
+        if strategy in TRANSLATING and config.generator != "logic_grid":
+            raise ValueError(
+                f"{strategy} translates logic-grid clues; it can't run on {generator.name}"
+            )
+    parse_levels(list(config.levels), generator.levels)
     for name, items in (
         ("models", config.models),
         ("strategies", config.strategies),
@@ -119,19 +129,15 @@ def inspect_cells(
     model IDs (tests pass a mock with scripted outputs)."""
 
     def run_cell(cell: Cell) -> CellResult:
+        task_fn, task_args = _task(cell)
         # In a copy of the context: eval_set leaves Inspect's context variables (the active
         # model among them) set when it returns, and no cell should see the last one's.
         _, logs = contextvars.copy_context().run(
             eval_set,
-            logic_grid,
+            task_fn,
             log_dir=str(cell.log_dir),
             model=(models or {}).get(cell.model, cell.model),
-            task_args={
-                "levels": cell.level,
-                "n_seeds": cell.n_seeds,
-                "seed_start": cell.seed_start,
-                "strategy": cell.strategy,
-            },
+            task_args=task_args,
             retry_attempts=RETRY_ATTEMPTS,
             display=display,
             ctl_server=False,  # several eval_sets run in one process
@@ -141,14 +147,16 @@ def inspect_cells(
             # rather than fail the cell and climb on: a rerun resumes from here.
             raise KeyboardInterrupt
         [log] = logs
-        grids = [_grid_scores(summary) for summary in read_eval_log_sample_summaries(log.location)]
-        scored = [grid for grid in grids if grid is not None]
+        scores = [
+            _answer_scores(summary) for summary in read_eval_log_sample_summaries(log.location)
+        ]
+        scored = [values for values in scores if values is not None]
         return CellResult(
             log=local_path(log.location),
             status=log.status,
             n=len(scored),
-            solved=sum(grid["solved"] == 1 for grid in scored),
-            context_limited=sum(grid["context_limited"] == 1 for grid in scored),
+            solved=sum(values["solved"] == 1 for values in scored),
+            context_limited=sum(values["context_limited"] == 1 for values in scored),
             error=log.error.message if log.error else None,
         )
 
@@ -212,6 +220,7 @@ def _climb(
             config.n_seeds,
             config.seed_start,
             cell_dir(run_dir, model, strategy, level),
+            config.generator,
         )
         try:
             result = run_cell(cell)
@@ -311,8 +320,23 @@ def _relative(log: Path, run_dir: Path) -> str:
     return log.resolve().relative_to(run_dir.resolve()).as_posix()
 
 
-def _grid_scores(summary: EvalSampleSummary) -> Mapping[str, object] | None:
-    score = (summary.scores or {}).get("grid_verifier")
+def _task(cell: Cell) -> tuple[Callable[..., Task], dict[str, object]]:
+    """The cell's Inspect task and its arguments. Logic-grid arguments are unchanged since 1e, so
+    eval_set still recognizes (and resumes) logs from before 1f."""
+    args: dict[str, object] = {
+        "levels": cell.level,
+        "n_seeds": cell.n_seeds,
+        "seed_start": cell.seed_start,
+        "strategy": cell.strategy,
+    }
+    if cell.generator == "logic_grid":
+        return logic_grid, args
+    return reasoning_gym, {"task": cell.generator, **args}
+
+
+def _answer_scores(summary: EvalSampleSummary) -> Mapping[str, object] | None:
+    scores = summary.scores or {}
+    score = next((scores[name] for name in ANSWER_SCORERS if name in scores), None)
     if score is None or not isinstance(score.value, Mapping):
         return None
     return score.value

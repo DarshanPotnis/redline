@@ -19,15 +19,16 @@ from typing import get_args
 from inspect_ai.util import DisplayType
 from pydantic import ValidationError
 
+from redline.puzzles.registry import GENERATORS
 from redline.runner.ladder import RUNS_ROOT, RunnerError, inspect_cells, run
 from redline.runner.manifest import RunConfig
-from redline.tasks.logic_grid import parse_levels
 
 logger = logging.getLogger("redline.runner")
 
 
 def parse_level_spec(spec: str) -> list[int]:
-    """ "1-7", "1,3,5" or a mix like "1-3,5"; checked against the ladder."""
+    """ "1-7", "1,3,5" or a mix like "1-3,5". Whether the generator has those levels is
+    checked when the run is validated."""
     levels: list[int] = []
     try:
         for part in (part.strip() for part in spec.split(",")):
@@ -36,7 +37,9 @@ def parse_level_spec(spec: str) -> list[int]:
                 levels.extend(range(int(low), int(high) + 1))
             elif part:
                 levels.append(int(part))
-        return parse_levels(levels)
+        if not levels or min(levels) < 1:
+            raise ValueError("levels are whole numbers from 1")
+        return levels
     except ValueError as error:
         raise argparse.ArgumentTypeError(f"bad --levels {spec!r}: {error}") from None
 
@@ -49,7 +52,10 @@ def split_items(items: Sequence[str]) -> tuple[str, ...]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m redline.runner",
-        description="Climb the logic-grid ladder for each (model, strategy), resumably.",
+        description="Climb a generator's ladder for each (model, strategy), resumably.",
+    )
+    parser.add_argument(
+        "--generator", choices=list(GENERATORS), default="logic_grid", help="the puzzle source"
     )
     parser.add_argument("--models", nargs="+", required=True, help="Inspect model IDs")
     parser.add_argument("--strategies", nargs="+", required=True)
@@ -74,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
 def config_from(args: argparse.Namespace) -> RunConfig:
     return RunConfig(
         run_id=args.run_id,
+        generator=args.generator,
         models=split_items(args.models),
         strategies=split_items(args.strategies),
         levels=tuple(args.levels),

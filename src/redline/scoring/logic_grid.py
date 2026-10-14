@@ -17,7 +17,7 @@ from redline.jsonscan import last_json
 from redline.puzzles.logic_grid.clues import holds
 from redline.puzzles.logic_grid.model import Clue, Solution, Spec
 from redline.puzzles.logic_grid.vocab import ATTRIBUTES
-from redline.strategies.base import CallRecord
+from redline.scoring.harness import run_flags
 
 # house -> attribute -> value, in the spec's own spelling
 type Grid = dict[int, dict[str, str]]
@@ -115,16 +115,6 @@ def grade(parsed: Grid | ParseError, solution: Solution, clues: Sequence[Clue]) 
     return Grade(True, valid, columns == expected, cell_accuracy, broken, None)
 
 
-def truncation(stop_reason: str, output_tokens: int | None, max_tokens: int) -> tuple[bool, bool]:
-    """(truncated, context_limited) for one generation.
-
-    Truncated: generation was cut off. Context-limited: it was cut off before spending the
-    budget, so the context window stopped it. That is a harness failure, not a model failure.
-    """
-    truncated = stop_reason in ("max_tokens", "model_length")
-    return truncated, truncated and output_tokens is not None and output_tokens < max_tokens
-
-
 @scorer(
     metrics={
         "solved": [accuracy(), stderr()],
@@ -146,44 +136,22 @@ def grid_verifier() -> Scorer:
         solution = Solution.model_validate_json(target.text)
         result = grade(parsed, solution, _CLUES.validate_python(hidden["clues"]))
         broken = None if result.broken_clues is None else list(result.broken_clues)
-        run = state.metadata.get("strategy_run", {})
-        calls = [CallRecord.model_validate(call) for call in run.get("calls", [])]
-        final = calls[-1] if calls else None
-        truncated, context_limited = (
-            truncation(final.stop_reason, final.output_tokens, final.max_tokens)
-            if final
-            else (False, False)
-        )
-        explanation = _explain(result)
-        if final and context_limited:
-            explanation += (
-                f"; harness failure: the context window stopped generation at "
-                f"{final.output_tokens} of {final.max_tokens} tokens"
-            )
+        flags = run_flags(state)
         return Score(
             value={
                 "format_ok": float(result.format_ok),
                 "valid_grid": float(result.valid_grid),
                 "solved": float(result.solved),
                 "cell_accuracy": result.cell_accuracy,
-                "truncated": float(truncated),
-                "context_limited": float(context_limited),
-                "forced_answer": float(any(call.forcing for call in calls)),
+                **flags.values(),
             },
             answer=None if isinstance(parsed, ParseError) else json.dumps(parsed),
-            explanation=explanation,
+            explanation=_explain(result) + flags.explanation_suffix(),
             metadata={
                 "broken_clues": broken,
                 "n_broken": None if broken is None else len(broken),
                 "parse_error": result.parse_error,
-                "n_calls": len(calls),
-                "budget_used": run.get("budget", {}).get("used"),
-                # the final call, whose stop decides truncated and context_limited
-                "stop_reason": final.stop_reason if final else None,
-                "input_tokens": final.input_tokens if final else None,
-                "output_tokens": final.output_tokens if final else None,
-                "reasoning_tokens": final.reasoning_tokens if final else None,
-                "max_tokens": final.max_tokens if final else None,
+                **flags.metadata(),
             },
         )
 

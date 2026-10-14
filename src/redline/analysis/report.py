@@ -5,11 +5,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from redline.analysis.chart import ladder_chart, level_label
-from redline.analysis.ladder import HealthRow, LevelRow, health_rows, level_rows
+from redline.analysis.chart import ladder_chart
+from redline.analysis.ladder import HealthRow, LevelRow, health_rows, level_rows, secondary
 from redline.budget import ANSWER_RESERVE, TOTAL_BUDGET
 from redline.export import to_parquet
 from redline.export.parquet import DATA_ROOT
+from redline.puzzles.registry import get_generator
 from redline.runner.manifest import Manifest, load
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,8 @@ def build_report(
         config.models,
         config.strategies,
         config.levels,
-        title=f"{config.run_id} ({manifest.seed_split} seeds): solved rate and cell accuracy",
+        title=f"{config.run_id} ({manifest.seed_split} seeds): solved rate and "
+        f"{_score_name(config.generator)}",
         out=reports / "figures" / f"{config.run_id}_ladder.png",
     )
     markdown = reports / f"{config.run_id}.md"
@@ -59,17 +61,17 @@ def render(
             "",
             *_run_table(manifest),
             "",
-            f"![Solved rate and cell accuracy by level, one column per model]({chart})",
+            f"![Solved rate and {_score_name(config.generator)} by level, one column per model]"
+            f"({chart})",
             "",
             "## Solved rate by level",
             "",
             "Context-limited samples are harness failures (the context window cut the model off "
             "before its budget ran out). They are excluded from every column but their own. "
             "Intervals are 95% Wilson. Levels a ladder never reached are absent, not zero. "
-            "Chance is the cell accuracy a random valid grid would get (1/houses); an answer "
-            "that fails to parse scores 0 cells, so a strategy can land below chance.",
+            + _chance_note(config.generator),
             "",
-            *_level_table(levels),
+            *_level_tables(levels),
             "",
             "## Ladders",
             "",
@@ -106,6 +108,7 @@ def _run_table(manifest: Manifest) -> list[str]:
     sessions = len(manifest.sessions)
     rows = [
         ("Commit", f"`{git}`"),
+        ("Generator", get_generator(config.generator).name),
         ("Models", models),
         ("Strategies", ", ".join(config.strategies)),
         (
@@ -122,33 +125,53 @@ def _run_table(manifest: Manifest) -> list[str]:
         (
             "Software",
             f"inspect_ai {manifest.provenance.inspect_ai}, z3 {manifest.provenance.z3}, "
-            f"Python {manifest.provenance.python}",
+            + (
+                f"reasoning_gym {manifest.provenance.reasoning_gym}, "
+                if manifest.provenance.reasoning_gym
+                else ""
+            )
+            + f"Python {manifest.provenance.python}",
         ),
     ]
     return ["| | |", "|---|---|", *(f"| {name} | {value} |" for name, value in rows)]
 
 
-def _level_table(levels: Sequence[LevelRow]) -> list[str]:
+def _level_tables(levels: Sequence[LevelRow]) -> list[str]:
+    """One table per generator, each with its own secondary score and chance columns."""
+    generators = sorted({row.generator for row in levels})
+    lines: list[str] = []
+    for generator in generators:
+        if len(generators) > 1:
+            lines += [f"### {generator}", ""]
+        lines += _level_table([row for row in levels if row.generator == generator], generator)
+        lines.append("")
+    return lines[:-1]
+
+
+def _level_table(levels: Sequence[LevelRow], generator: str) -> list[str]:
+    title = secondary(generator).title
     header = (
-        "| Model | Strategy | Level | Grid | n | Ctx-lim. | Solved | 95% CI | Cell acc. | Chance "
-        "| Format OK | Forced | Out tokens | Seconds |"
+        f"| Generator | Model | Strategy | Level | Size | n | Ctx-lim. | Solved | 95% CI | {title} "
+        "| Chance | Format OK | Forced | Out tokens | Seconds |"
     )
     lines = [header, _rule(header)]
+    source = get_generator(generator)
     for row in levels:
         interval = row.interval
         lines.append(
             "| "
             + " | ".join(
                 [
+                    generator.removeprefix("reasoning_gym/"),
                     _short(row.model),
                     row.strategy,
                     str(row.level),
-                    level_label(row.level).split("\n")[1],
+                    source.describe(row.level),
                     str(row.n),
                     str(row.context_limited),
                     f"{row.solved}/{row.n}",
                     "n/a" if interval is None else f"{interval[0]:.0%}-{interval[1]:.0%}",
-                    _percent(row.cell_accuracy),
+                    _percent(row.score),
                     _percent(row.chance),
                     _percent(row.format_ok),
                     _percent(row.forced_answer),
@@ -159,6 +182,24 @@ def _level_table(levels: Sequence[LevelRow]) -> list[str]:
             + " |"
         )
     return lines
+
+
+def _score_name(generator: str) -> str:
+    return secondary(get_generator(generator).name).axis.removeprefix("mean ")
+
+
+def _chance_note(generator: str) -> str:
+    if get_generator(generator).name == "logic_grid":
+        return (
+            "Chance is the cell accuracy a random valid grid would get (1/houses); an answer "
+            "that fails to parse scores 0 cells, so a strategy can land below chance."
+        )
+    return (
+        'RG score is Reasoning Gym\'s partial credit for the extracted "Answer:" line (for '
+        "knights and knaves, 0.3 + 0.7 x the share of roles right when at least one is). Chance "
+        'is what random roles would score on average; an answer with no "Answer:" line '
+        "scores 0, so a strategy can land below chance."
+    )
 
 
 def _ladder_table(manifest: Manifest) -> list[str]:

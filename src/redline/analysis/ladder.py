@@ -2,9 +2,13 @@
 
 Context-limited samples are harness failures (the context window, not the budget, cut them off),
 so every rate here excludes them and their count is reported next to it.
+
+Besides the solved rate, each generator has one secondary score with a chance baseline: the
+logic grid's cell accuracy (1/houses for a random valid grid), and Reasoning Gym's partial credit
+(for knights and knaves, the expected score of random roles).
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,24 +16,28 @@ from typing import Any
 import duckdb
 
 from redline.puzzles.logic_grid import LADDER
+from redline.puzzles.reasoning_gym import ReasoningGymGenerator
+from redline.puzzles.registry import get_generator
+from redline.scoring.reasoning_gym import chance_knights_knaves
 from redline.stats import wilson_interval
 
+# score: a sample's secondary score. Each generator fills one of the two columns.
 _LEVELS = """
-SELECT model, strategy, level,
+SELECT generator, model, strategy, level,
        count(*) FILTER (WHERE NOT context_limited) AS n,
        count(*) FILTER (WHERE context_limited) AS context_limited,
        count(*) FILTER (WHERE solved AND NOT context_limited) AS solved,
-       avg(cell_accuracy) FILTER (WHERE NOT context_limited) AS cell_accuracy,
+       avg(coalesce(cell_accuracy, rg_score)) FILTER (WHERE NOT context_limited) AS score,
        avg(format_ok::DOUBLE) FILTER (WHERE NOT context_limited) AS format_ok,
        avg(forced_answer::DOUBLE) FILTER (WHERE NOT context_limited) AS forced_answer,
        avg(output_tokens) FILTER (WHERE NOT context_limited) AS output_tokens,
        avg(seconds) FILTER (WHERE NOT context_limited) AS seconds
 FROM read_parquet($path)
-GROUP BY model, strategy, level
+GROUP BY generator, model, strategy, level
 """
 
 _HEALTH = """
-SELECT model, strategy,
+SELECT generator, model, strategy,
        count(*) AS samples,
        count(*) FILTER (WHERE context_limited) AS context_limited,
        avg(format_ok::DOUBLE) FILTER (WHERE NOT context_limited) AS format_ok,
@@ -37,7 +45,7 @@ SELECT model, strategy,
        avg(truncated::DOUBLE) FILTER (WHERE NOT context_limited) AS truncated,
        sum(seconds) AS seconds
 FROM read_parquet($path)
-GROUP BY model, strategy
+GROUP BY generator, model, strategy
 """
 
 
@@ -53,14 +61,42 @@ def chance_cell_accuracy(level: int) -> float:
 
 
 @dataclass(frozen=True)
+class Secondary:
+    """A generator's secondary score: its names, and what chance would score at each level."""
+
+    title: str  # the table column
+    axis: str  # the chart's y label
+    chance_label: str
+    chance: Callable[[int], float | None]
+
+
+def secondary(generator: str) -> Secondary:
+    if generator == "logic_grid":
+        return Secondary(
+            "Cell acc.", "mean cell accuracy", "chance (random valid grid)", chance_cell_accuracy
+        )
+    source = get_generator(generator)
+    if generator == "reasoning_gym/knights_knaves" and isinstance(source, ReasoningGymGenerator):
+        ladder = source.ladder
+        return Secondary(
+            "RG score",
+            "mean RG score",
+            "chance (random roles)",
+            lambda level: chance_knights_knaves(ladder[level]["n_people"]),
+        )
+    return Secondary("RG score", "mean RG score", "chance", lambda level: None)
+
+
+@dataclass(frozen=True)
 class LevelRow:
+    generator: str
     model: str
     strategy: str
     level: int
     n: int  # samples scored, context-limited ones excluded
     context_limited: int
     solved: int
-    cell_accuracy: float | None  # None when n == 0
+    score: float | None  # the generator's secondary score; None when n == 0
     format_ok: float | None
     forced_answer: float | None
     output_tokens: float | None
@@ -71,9 +107,9 @@ class LevelRow:
         return self.solved / self.n if self.n else None
 
     @property
-    def chance(self) -> float:
-        """Cell accuracy a random valid grid would get here."""
-        return chance_cell_accuracy(self.level)
+    def chance(self) -> float | None:
+        """The secondary score chance would get here."""
+        return secondary(self.generator).chance(self.level)
 
     @property
     def interval(self) -> tuple[float, float] | None:
@@ -83,6 +119,7 @@ class LevelRow:
 
 @dataclass(frozen=True)
 class HealthRow:
+    generator: str
     model: str
     strategy: str
     samples: int  # context-limited ones included
@@ -94,16 +131,19 @@ class HealthRow:
 
 
 def level_rows(parquet: Path, models: Sequence[str], strategies: Sequence[str]) -> list[LevelRow]:
-    """One row per (model, strategy, level) that ran, in the run's model and strategy order."""
+    """One row per (generator, model, strategy, level) that ran, in the run's order."""
     rows = [LevelRow(*row) for row in _query(_LEVELS, parquet)]
     return sorted(
-        rows, key=lambda r: (_rank(r.model, models), _rank(r.strategy, strategies), r.level)
+        rows,
+        key=lambda r: (r.generator, _rank(r.model, models), _rank(r.strategy, strategies), r.level),
     )
 
 
 def health_rows(parquet: Path, models: Sequence[str], strategies: Sequence[str]) -> list[HealthRow]:
     rows = [HealthRow(*row) for row in _query(_HEALTH, parquet)]
-    return sorted(rows, key=lambda r: (_rank(r.model, models), _rank(r.strategy, strategies)))
+    return sorted(
+        rows, key=lambda r: (r.generator, _rank(r.model, models), _rank(r.strategy, strategies))
+    )
 
 
 def _query(sql: str, parquet: Path) -> list[tuple[Any, ...]]:

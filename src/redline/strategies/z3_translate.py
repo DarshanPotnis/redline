@@ -117,6 +117,8 @@ def build_messages(puzzle: PublicPuzzle) -> list[ChatMessage]:
 
 
 async def run(puzzle: PublicPuzzle, model: BudgetedModel) -> StrategyResult:
+    if puzzle.family != "logic_grid":
+        raise ValueError(f"z3_translate translates logic-grid clues; {puzzle.generator} has none")
     spec = Spec.model_validate(puzzle.structure)
     output = await model.generate(build_messages(puzzle), forcing_message=FORCE_TRANSLATION)
     translation = parse_translation(output.completion, spec)

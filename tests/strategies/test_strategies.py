@@ -11,9 +11,10 @@ from inspect_ai.model import ChatMessage, GenerateConfig, ModelOutput
 import redline.strategies
 from redline.puzzles.base import PublicPuzzle
 from redline.puzzles.logic_grid import generate
+from redline.puzzles.reasoning_gym import KNIGHTS_KNAVES
 from redline.strategies import STRATEGIES, cot, direct, get_strategy
 from redline.strategies.base import BudgetedModel
-from redline.strategies.common import RULES
+from redline.strategies.common import FORCE_ANSWER, PROMPTS, RULES
 from redline.strategies.cot import INSTRUCTION as COT_INSTRUCTION
 from redline.strategies.direct import INSTRUCTION as DIRECT_INSTRUCTION
 
@@ -109,3 +110,47 @@ def test_strategies_are_pure(name: str) -> None:
 def test_unknown_strategy_lists_the_valid_ones() -> None:
     with pytest.raises(ValueError, match="choose from cot, direct, z3_translate"):
         get_strategy("peek")
+
+
+def test_the_logic_grid_prompts_are_unchanged_since_1c() -> None:
+    grid = PROMPTS["logic_grid"]
+    assert grid.direct == DIRECT_INSTRUCTION == "Respond with only the JSON."
+    assert (
+        grid.cot
+        == COT_INSTRUCTION
+        == "Reason step by step, then give the final answer as JSON at the end."
+    )
+    assert grid.force == FORCE_ANSWER and grid.rules == RULES
+    assert FORCE_ANSWER.startswith("You have run out of reasoning budget.")
+
+
+@pytest.mark.parametrize(
+    ("build", "field"), [(direct.build_messages, "direct"), (cot.build_messages, "cot")]
+)
+def test_reasoning_gym_puzzles_get_their_own_wording(
+    build: Callable[[PublicPuzzle], list[ChatMessage]], field: str
+) -> None:
+    public = KNIGHTS_KNAVES.generate(2, 0).public()
+    system, user = build(public)
+    rg = PROMPTS["reasoning_gym"]
+    assert system.content == rg.rules
+    assert user.content == f"{public.text}\n\n{public.answer_format}\n\n{getattr(rg, field)}"
+    for text in (rg.rules, rg.direct, rg.cot, rg.force):
+        assert "JSON" not in text and "house" not in text
+    assert '"Answer:"' in rg.direct and '"Answer:"' in rg.force
+
+
+def test_an_unknown_family_is_an_error() -> None:
+    public = PublicPuzzle(generator="sudoku/9x9", text="?", answer_format="?", structure={})
+    with pytest.raises(ValueError, match="no prompts for puzzle family 'sudoku'"):
+        direct.build_messages(public)
+
+
+def test_z3_translate_refuses_other_families() -> None:
+    public = KNIGHTS_KNAVES.generate(1, 0).public()
+
+    async def reply(messages: list[ChatMessage], config: GenerateConfig) -> ModelOutput:
+        raise AssertionError("no model call should happen")
+
+    with pytest.raises(ValueError, match="z3_translate translates logic-grid clues"):
+        asyncio.run(get_strategy("z3_translate")(public, BudgetedModel(reply)))

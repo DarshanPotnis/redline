@@ -207,7 +207,10 @@ def test_instance_holds_text_key_hidden_puzzle_and_features(level: int, seed: in
     assert instance.answer_format == answer_format(p.spec)
     assert instance.structure == p.spec.model_dump(mode="json")
     assert instance.public() == PublicPuzzle(
-        text=instance.text, answer_format=answer_format(p.spec), structure=instance.structure
+        generator="logic_grid",
+        text=instance.text,
+        answer_format=answer_format(p.spec),
+        structure=instance.structure,
     )
     assert instance.answer == p.solution.model_dump(mode="json")
     assert list(instance.instance) == ["spec", "clues", "generator_version", "features_method"]

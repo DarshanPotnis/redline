@@ -15,7 +15,7 @@ from inspect_ai.model import (
 )
 
 from redline.budget import ANSWER_RESERVE, TOTAL_BUDGET
-from redline.scoring.logic_grid import truncation
+from redline.scoring.harness import truncation
 from redline.strategies.common import FORCE_ANSWER
 from redline.tasks.logic_grid import logic_grid, logic_grid_samples
 

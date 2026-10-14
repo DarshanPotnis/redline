@@ -126,5 +126,9 @@ class LogicGridGenerator:
     def generate(self, level: int, seed: int) -> PuzzleInstance:
         return generate(level, seed).to_instance()
 
+    def describe(self, level: int) -> str:
+        houses, attributes = LADDER[level]
+        return f"{houses}x{attributes}"
+
 
 GENERATOR: Final[PuzzleGenerator] = LogicGridGenerator()

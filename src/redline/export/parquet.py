@@ -19,16 +19,20 @@ from inspect_ai.log import EvalSampleSummary
 from inspect_ai.scorer import Score
 
 from redline.runner.manifest import Manifest, load
+from redline.scoring.harness import ANSWER_SCORERS
 
 logger = logging.getLogger(__name__)
 
 DATA_ROOT = Path("data/runs")
 SAMPLES = "samples.parquet"
 
+# Answer-scorer flags; valid_grid is the logic grid's alone (null for other generators).
 FLAGS = ("solved", "format_ok", "valid_grid", "truncated", "context_limited", "forced_answer")
+ANSWER = "answer"  # whichever answer scorer the sample has (scoring.harness.ANSWER_SCORERS)
 SCHEMA = pa.schema(
     [
         ("run_id", pa.string()),
+        ("generator", pa.string()),  # e.g. logic_grid, reasoning_gym/knights_knaves
         ("model", pa.string()),
         ("strategy", pa.string()),
         ("level", pa.int64()),
@@ -36,7 +40,8 @@ SCHEMA = pa.schema(
         ("sample_id", pa.string()),  # the dataset id, e.g. logic_grid/L3/s7: joins strategies
         ("generator_version", pa.int64()),  # puzzle text version; null before 1e.1 (= 1)
         *((flag, pa.bool_()) for flag in FLAGS),
-        ("cell_accuracy", pa.float64()),
+        ("cell_accuracy", pa.float64()),  # logic grid only
+        ("rg_score", pa.float64()),  # Reasoning Gym only: RG's partial credit
         ("translation_exact", pa.bool_()),  # null unless the strategy translates
         ("translation_status", pa.string()),
         # translated clues: exact, inferred (true, not stated), wrong; items dropped as malformed
@@ -105,7 +110,10 @@ def samples_table(manifest: Manifest, logs: list[Path]) -> pa.Table:
 
 
 def _score(summary: EvalSampleSummary, scorer: str) -> Score | None:
-    return (summary.scores or {}).get(scorer)
+    scores = summary.scores or {}
+    if scorer == ANSWER:
+        return next((scores[name] for name in ANSWER_SCORERS if name in scores), None)
+    return scores.get(scorer)
 
 
 def _value(scorer: str, key: str) -> Callable[[EvalSampleSummary], Any]:
@@ -159,9 +167,11 @@ COLUMNS = [
     SampleColumn("id", path="id", required=True),
     SampleColumn("level", path="metadata.level", required=True),
     SampleColumn("seed", path="metadata.seed", required=True),
+    SampleColumn("generator", path="metadata.generator", required=True),
     SampleColumn("generator_version", path="metadata.generator_version"),
-    *(SampleColumn(flag, path=_flag("grid_verifier", flag)) for flag in FLAGS),
+    *(SampleColumn(flag, path=_flag(ANSWER, flag)) for flag in FLAGS),
     SampleColumn("cell_accuracy", path=_value("grid_verifier", "cell_accuracy")),
+    SampleColumn("rg_score", path=_value("rg_verifier", "rg_score")),
     SampleColumn("translation_exact", path=_flag("translation_verifier", "translation_exact")),
     SampleColumn(
         "translation_status", path=_metadata("translation_verifier", "translation_status")
@@ -173,8 +183,8 @@ COLUMNS = [
     SampleColumn("input_tokens", path=_usage("input_tokens")),
     SampleColumn("output_tokens", path=_usage("output_tokens")),
     SampleColumn("reasoning_tokens", path=_usage("reasoning_tokens")),
-    SampleColumn("n_calls", path=_metadata("grid_verifier", "n_calls")),
+    SampleColumn("n_calls", path=_metadata(ANSWER, "n_calls")),
     SampleColumn("seconds", path="working_time"),
-    SampleColumn("stop_reason", path=_metadata("grid_verifier", "stop_reason")),
+    SampleColumn("stop_reason", path=_metadata(ANSWER, "stop_reason")),
     SampleColumn(f"{FEATURE_PREFIX}*", path=_features),
 ]

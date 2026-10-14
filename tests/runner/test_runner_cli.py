@@ -16,7 +16,7 @@ def test_level_specs(spec: str, levels: list[int]) -> None:
     assert parse_level_spec(spec) == levels
 
 
-@pytest.mark.parametrize("spec", ["0-2", "8", "a-b", "1-", ""])
+@pytest.mark.parametrize("spec", ["0-2", "a-b", "1-", ""])
 def test_bad_level_specs(spec: str) -> None:
     with pytest.raises(argparse.ArgumentTypeError):
         parse_level_spec(spec)
@@ -38,6 +38,8 @@ def test_models_and_strategies_accept_spaces_or_commas() -> None:
         ["--run-id", "../escape"],
         ["--run-id", "ok", "--seed-start", "1000"],
         ["--run-id", "ok", "--strategies", "guess"],
+        ["--run-id", "ok", "--levels", "8"],  # past the logic-grid ladder
+        ["--run-id", "ok", "--generator", "knights_knaves", "--strategies", "z3_translate"],
     ],
 )
 def test_refusals_exit_with_2_and_run_nothing(tmp_path: Path, extra: list[str]) -> None:

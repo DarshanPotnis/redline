@@ -1,7 +1,7 @@
 """Inspect task over logic-grid puzzles: one sample per (level, seed), graded by grid_verifier."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
@@ -46,9 +46,12 @@ def logic_grid_samples(levels: Sequence[int], n_seeds: int, seed_start: int = 0)
     return [_sample(level, seed) for level in levels for seed in seeds]
 
 
-def parse_levels(levels: str | int | Sequence[int | str]) -> list[int]:
-    """Accept "1,2,3", a single level, or a list. From Inspect's CLI, `-T levels=1` arrives as
-    an int and `-T levels=1,2` as a list of strings."""
+def parse_levels(
+    levels: str | int | Sequence[int | str], valid: Collection[int] = tuple(LADDER)
+) -> list[int]:
+    """Accept "1,2,3", a single level, or a list, each one of the `valid` levels (the logic-grid
+    ladder by default). From Inspect's CLI, `-T levels=1` arrives as an int and `-T levels=1,2`
+    as a list of strings."""
     if isinstance(levels, int):
         items: Sequence[int | str] = [levels]
     elif isinstance(levels, str):
@@ -59,9 +62,9 @@ def parse_levels(levels: str | int | Sequence[int | str]) -> list[int]:
         parsed = [int(item) for item in items if str(item).strip()]
     except ValueError:
         raise ValueError(f"levels must be whole numbers, got {levels!r}") from None
-    unknown = [level for level in parsed if level not in LADDER]
+    unknown = [level for level in parsed if level not in valid]
     if unknown or not parsed:
-        raise ValueError(f"unknown levels {unknown or levels!r}; levels are {sorted(LADDER)}")
+        raise ValueError(f"unknown levels {unknown or levels!r}; levels are {sorted(valid)}")
     return parsed
 
 

@@ -32,6 +32,7 @@ class RunConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     run_id: str
+    generator: str = "logic_grid"  # a `--generator` name from puzzles/registry.py
     models: tuple[str, ...]
     strategies: tuple[str, ...]
     levels: tuple[int, ...]
@@ -87,6 +88,7 @@ class Provenance(BaseModel):
     inspect_ai: str
     z3: str
     redline: str
+    reasoning_gym: str | None = None  # recorded since 1f
 
 
 class Manifest(BaseModel):
@@ -143,6 +145,7 @@ def provenance(sha: str) -> Provenance:
         inspect_ai=version("inspect_ai"),
         z3=z3.get_version_string(),
         redline=version("redline"),
+        reasoning_gym=version("reasoning_gym"),
     )
 
 
