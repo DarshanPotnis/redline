@@ -15,9 +15,11 @@ from pydantic import JsonValue, TypeAdapter
 
 from redline.puzzles.base import PuzzleGenerator, PuzzleInstance
 
+# Neutral about what comes before the answer, so a strategy decides that: "End your response with
+# a final line..." (1f) invited a response first, and direct reasoned for thousands of tokens.
 ANSWER_FORMAT = (
-    "End your response with a final line of the form: Answer: <your answer>, written in the "
-    "format the question asks for."
+    "Give your final answer as a single line of the form: Answer: <your answer>, in the format "
+    "the question asks for."
 )
 _JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 

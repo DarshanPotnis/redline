@@ -3,7 +3,9 @@ and the forcing message for budget forcing.
 
 A puzzle family (the generator name before "/", e.g. "logic_grid", "reasoning_gym") brings its
 own system rules and its own way of naming the answer: the logic grid answers in JSON, Reasoning
-Gym tasks in a final "Answer:" line. The logic-grid strings are unchanged since 1c.
+Gym tasks in a final "Answer:" line. A strategy means the same on every family: direct answers
+with only the answer, no reasoning ("Respond with only ..."), and the forcing message names the
+family's answer format. The logic-grid strings are unchanged since 1c.
 """
 
 from dataclasses import dataclass
@@ -45,12 +47,10 @@ PROMPTS: dict[str, Prompts] = {
             "You solve logic puzzles stated in plain language. The question gives every rule you "
             "need, and it has exactly one correct answer."
         ),
-        direct='Respond with only the final "Answer:" line.',
+        # "that line" is the answer-format line just before the instruction in the same message.
+        direct="Respond with only that line, no reasoning.",
         cot='Reason step by step, then end with the final "Answer:" line.',
-        force=(
-            'You have run out of reasoning budget. Output only your final "Answer:" line now, '
-            "based on your reasoning so far."
-        ),
+        force="Output only the final line now: Answer: <your answer>",
     ),
 }
 

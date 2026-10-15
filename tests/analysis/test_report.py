@@ -7,7 +7,14 @@ import pytest
 from conftest import MockRun
 from redline.analysis import build_report
 from redline.analysis.chart import level_label, points
-from redline.analysis.ladder import LevelRow, health_rows, level_rows
+from redline.analysis.ladder import (
+    FIDELITY_LIMIT,
+    FidelityRow,
+    LevelRow,
+    fidelity_rows,
+    health_rows,
+    level_rows,
+)
 from redline.analysis.report import ReportPaths
 
 MODELS = ("mockllm/model",)
@@ -75,3 +82,17 @@ def test_the_report_and_chart_are_written(built: Built) -> None:
 def test_tick_labels_wrap_long_sizes() -> None:
     assert level_label("logic_grid", 3) == "L3\n4x3"
     assert level_label("reasoning_gym/knights_knaves", 4) == "L4\n4p\nd3 w3"
+
+
+def test_strategy_fidelity_is_reported(built: Built) -> None:
+    # The mock's direct writes 120 tokens a call (two calls of 100 when forced): median 120.
+    assert "- Strategy fidelity: direct should answer without reasoning" in built.markdown
+    assert "  - model on logic_grid: 120 tokens over 6 samples, ok" in built.markdown
+    [row] = fidelity_rows(built.paths.parquet, MODELS)
+    assert (row.median_tokens, row.flagged) == (120, False)
+
+
+@pytest.mark.parametrize(("tokens", "flagged"), [(300, False), (301, True), (None, False)])
+def test_direct_above_the_limit_is_flagged(tokens: float | None, flagged: bool) -> None:
+    assert FIDELITY_LIMIT == 300
+    assert FidelityRow("reasoning_gym/knights_knaves", "m", tokens, 3).flagged is flagged

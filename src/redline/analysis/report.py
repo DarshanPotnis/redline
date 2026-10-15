@@ -6,7 +6,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from redline.analysis.chart import ladder_chart
-from redline.analysis.ladder import HealthRow, LevelRow, health_rows, level_rows, secondary
+from redline.analysis.ladder import (
+    FIDELITY_LIMIT,
+    FidelityRow,
+    HealthRow,
+    LevelRow,
+    fidelity_rows,
+    health_rows,
+    level_rows,
+    secondary,
+)
 from redline.budget import ANSWER_RESERVE, TOTAL_BUDGET
 from redline.export import to_parquet
 from redline.export.parquet import DATA_ROOT
@@ -34,6 +43,7 @@ def build_report(
     parquet = to_parquet(run_dir, data_root)
     levels = level_rows(parquet, config.models, config.strategies)
     health = health_rows(parquet, config.models, config.strategies)
+    fidelity = fidelity_rows(parquet, config.models)
     chart = ladder_chart(
         levels,
         config.models,
@@ -44,13 +54,19 @@ def build_report(
         out=reports / "figures" / f"{config.run_id}_ladder.png",
     )
     markdown = reports / f"{config.run_id}.md"
-    markdown.write_text(render(manifest, levels, health, chart.relative_to(reports).as_posix()))
+    markdown.write_text(
+        render(manifest, levels, health, fidelity, chart.relative_to(reports).as_posix())
+    )
     logger.info("wrote %s and %s", markdown, chart)
     return ReportPaths(parquet, markdown, chart)
 
 
 def render(
-    manifest: Manifest, levels: Sequence[LevelRow], health: Sequence[HealthRow], chart: str
+    manifest: Manifest,
+    levels: Sequence[LevelRow],
+    health: Sequence[HealthRow],
+    fidelity: Sequence[FidelityRow],
+    chart: str,
 ) -> str:
     config = manifest.config
     return "\n".join(
@@ -79,7 +95,7 @@ def render(
             "",
             "## Harness health",
             "",
-            *_health_section(manifest, health),
+            *_health_section(manifest, health, fidelity),
             "",
         ]
     )
@@ -214,7 +230,24 @@ def _ladder_table(manifest: Manifest) -> list[str]:
     return lines
 
 
-def _health_section(manifest: Manifest, health: Sequence[HealthRow]) -> list[str]:
+def _fidelity_lines(fidelity: Sequence[FidelityRow]) -> list[str]:
+    if not fidelity:
+        return ["- Strategy fidelity: no direct runs to check."]
+    return [
+        f"- Strategy fidelity: direct should answer without reasoning (median output at most "
+        f"{FIDELITY_LIMIT} tokens).",
+        *(
+            f"  - {_short(row.model)} on {row.generator.removeprefix('reasoning_gym/')}: "
+            f"{_number(row.median_tokens)} tokens over {row.samples} samples, "
+            + ("**FLAG**" if row.flagged else "ok")
+            for row in fidelity
+        ),
+    ]
+
+
+def _health_section(
+    manifest: Manifest, health: Sequence[HealthRow], fidelity: Sequence[FidelityRow]
+) -> list[str]:
     samples = sum(row.samples for row in health)
     limited = sum(row.context_limited for row in health)
     errored = [
@@ -230,6 +263,7 @@ def _health_section(manifest: Manifest, health: Sequence[HealthRow]) -> list[str
     lines = [
         f"- Context-limited samples: **{limited} of {samples}** (excluded from accuracy).",
         "- Errored cells: " + ("; ".join(errored) if errored else "none."),
+        *_fidelity_lines(fidelity),
         "- Format OK, forced answer and truncated are shares of the samples that were not "
         "context-limited. A forced answer means the reasoning call hit its cap and the "
         "reserve forced a final answer.",

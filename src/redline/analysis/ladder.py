@@ -49,6 +49,19 @@ GROUP BY generator, model, strategy
 """
 
 
+# Strategy fidelity: direct answers without reasoning, so its median output stays short. Logic-grid
+# direct writes about 70 tokens; pilot-1f's knights-and-knaves direct wrote 2,000-3,600, i.e. it
+# reasoned, which makes "direct" mean different things on different families.
+FIDELITY_LIMIT = 300
+
+_FIDELITY = """
+SELECT generator, model, median(output_tokens) AS median_tokens, count(*) AS samples
+FROM read_parquet($path)
+WHERE strategy = 'direct'
+GROUP BY generator, model
+"""
+
+
 def chance_cell_accuracy(level: int) -> float:
     """Expected cell accuracy of a uniformly random valid grid at this level.
 
@@ -128,6 +141,25 @@ class HealthRow:
     forced_answer: float | None
     truncated: float | None
     seconds: float  # summed sample working time
+
+
+@dataclass(frozen=True)
+class FidelityRow:
+    """Direct's median output per (generator, model)."""
+
+    generator: str
+    model: str
+    median_tokens: float | None
+    samples: int
+
+    @property
+    def flagged(self) -> bool:
+        return self.median_tokens is not None and self.median_tokens > FIDELITY_LIMIT
+
+
+def fidelity_rows(parquet: Path, models: Sequence[str]) -> list[FidelityRow]:
+    rows = [FidelityRow(*row) for row in _query(_FIDELITY, parquet)]
+    return sorted(rows, key=lambda r: (r.generator, _rank(r.model, models)))
 
 
 def level_rows(parquet: Path, models: Sequence[str], strategies: Sequence[str]) -> list[LevelRow]:

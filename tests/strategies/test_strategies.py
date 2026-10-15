@@ -137,7 +137,31 @@ def test_reasoning_gym_puzzles_get_their_own_wording(
     assert user.content == f"{public.text}\n\n{public.answer_format}\n\n{getattr(rg, field)}"
     for text in (rg.rules, rg.direct, rg.cot, rg.force):
         assert "JSON" not in text and "house" not in text
-    assert '"Answer:"' in rg.direct and '"Answer:"' in rg.force
+
+
+# What each family's answer format is called. A new family must add itself here, so the checks
+# below cover it.
+ANSWER_MARKERS = {"logic_grid": "JSON", "reasoning_gym": "Answer:"}
+
+
+def test_every_family_has_an_answer_marker() -> None:
+    assert set(PROMPTS) == set(ANSWER_MARKERS)
+
+
+@pytest.mark.parametrize("family", sorted(PROMPTS))
+def test_direct_means_no_reasoning_in_every_family(family: str) -> None:
+    # A strategy must mean the same thing on every family, or cross-family comparisons are void:
+    # pilot-1f's knights-and-knaves direct reasoned for a median of 2,000-3,600 tokens.
+    assert "Respond with only" in PROMPTS[family].direct
+
+
+def test_the_reasoning_gym_direct_prompt_rules_out_reasoning() -> None:
+    assert PROMPTS["reasoning_gym"].direct == "Respond with only that line, no reasoning."
+
+
+@pytest.mark.parametrize("family", sorted(PROMPTS))
+def test_every_forcing_message_names_its_answer_format(family: str) -> None:
+    assert ANSWER_MARKERS[family] in PROMPTS[family].force
 
 
 def test_an_unknown_family_is_an_error() -> None:
