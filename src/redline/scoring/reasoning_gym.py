@@ -50,6 +50,7 @@ def chance_knights_knaves(n_people: int) -> float:
         "truncated": [mean()],
         "context_limited": [mean()],
         "forced_answer": [mean()],
+        "direct_overrun": [mean()],
     }
 )
 def rg_verifier() -> Scorer:

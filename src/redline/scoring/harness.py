@@ -1,7 +1,12 @@
 """What every answer scorer reports about the run itself, whatever the puzzle: was the final
 generation cut off, was that the context window's doing (a harness failure, excluded from
-accuracy), and was the answer forced from the reserve. Judged on the final model call."""
+accuracy), and was the answer forced from the reserve. Judged on the final model call.
 
+direct_overrun is direct's fidelity signal: direct has only the answer reserve, in one call, so
+a reply that stops on max_tokens ignored "no reasoning" and ran out before answering. It is NaN
+(Inspect's "not scored") for every other strategy, so their means leave it out."""
+
+import math
 from dataclasses import dataclass
 
 from inspect_ai.solver import TaskState
@@ -31,6 +36,15 @@ class RunFlags:
     forced_answer: bool
     calls: list[CallRecord]
     budget_used: int | None
+    strategy: str | None
+
+    @property
+    def direct_overrun(self) -> float:
+        """1.0 when direct's single call ran into its cap (a context-window cutoff is a harness
+        failure instead, counted as context_limited); NaN for other strategies."""
+        if self.strategy != "direct":
+            return math.nan
+        return float(self.truncated and not self.context_limited)
 
     @property
     def final(self) -> CallRecord | None:
@@ -42,6 +56,7 @@ class RunFlags:
             "truncated": float(self.truncated),
             "context_limited": float(self.context_limited),
             "forced_answer": float(self.forced_answer),
+            "direct_overrun": self.direct_overrun,
         }
 
     def metadata(self) -> dict[str, JsonValue]:
@@ -82,4 +97,5 @@ def run_flags(state: TaskState) -> RunFlags:
         forced_answer=any(call.forcing for call in calls),
         calls=calls,
         budget_used=run.get("budget", {}).get("used"),
+        strategy=run.get("strategy"),
     )

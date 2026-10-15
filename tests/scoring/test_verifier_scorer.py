@@ -63,6 +63,7 @@ def test_correct_swapped_and_garbage_answers(tmp_path: Path) -> None:
         "truncated": 0.0,
         "context_limited": 0.0,
         "forced_answer": 0.0,
+        "direct_overrun": 0.0,
     }
     assert correct.metadata is not None
     grading = {key: correct.metadata[key] for key in ("broken_clues", "n_broken", "parse_error")}

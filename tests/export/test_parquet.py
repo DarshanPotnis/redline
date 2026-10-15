@@ -70,8 +70,8 @@ def test_sample_rows_carry_ids_tokens_and_translations(parquet: Path) -> None:
     assert table == [
         ("logic_grid/L1/s0", "direct", None, None, 300, 120, 1, "stop", "mock", 0),
         ("logic_grid/L1/s1", "direct", None, None, 300, 120, 1, "stop", "mock", 1),
-        # cut off at 100 of 3,584 tokens, then forced: cut off again below the reserve
-        (CONTEXT_LIMITED, "direct", None, None, 600, 200, 2, "max_tokens", "mock", 1),
+        # cut off by the context window at 100 of direct's 512 tokens; direct is never forced
+        (CONTEXT_LIMITED, "direct", None, None, 300, 100, 1, "max_tokens", "mock", 1),
         ("logic_grid/L1/s0", "z3_translate", True, "unique", 300, 120, 1, "stop", "mock", 0),
         ("logic_grid/L1/s1", "z3_translate", True, "unique", 300, 120, 1, "stop", "mock", 1),
     ]

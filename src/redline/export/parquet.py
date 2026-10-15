@@ -8,6 +8,7 @@ strategies that don't translate).
 """
 
 import logging
+import math
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,16 @@ DATA_ROOT = Path("data/runs")
 SAMPLES = "samples.parquet"
 
 # Answer-scorer flags; valid_grid is the logic grid's alone (null for other generators).
-FLAGS = ("solved", "format_ok", "valid_grid", "truncated", "context_limited", "forced_answer")
+# direct_overrun is direct's alone: null for other strategies (their scorers report NaN).
+FLAGS = (
+    "solved",
+    "format_ok",
+    "valid_grid",
+    "truncated",
+    "context_limited",
+    "forced_answer",
+    "direct_overrun",
+)
 ANSWER = "answer"  # whichever answer scorer the sample has (scoring.harness.ANSWER_SCORERS)
 SCHEMA = pa.schema(
     [
@@ -139,7 +149,9 @@ def _flag(scorer: str, key: str) -> Callable[[EvalSampleSummary], bool | None]:
 
     def extract(summary: EvalSampleSummary) -> bool | None:
         number = value(summary)
-        return None if number is None else number == 1
+        if number is None or (isinstance(number, float) and math.isnan(number)):
+            return None  # NaN is Inspect's "not scored"
+        return bool(number == 1)
 
     return extract
 

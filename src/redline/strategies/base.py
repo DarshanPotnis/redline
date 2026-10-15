@@ -1,10 +1,11 @@
 """Strategy contract v2: a strategy is `async def run(puzzle, model) -> StrategyResult`.
 
-`BudgetedModel` is a strategy's only way to reach the model, and it applies the same rule to
-every strategy: TOTAL_BUDGET output tokens per sample (reasoning included), every call recorded,
-and budget forcing as in s1. A reasoning call may spend at most what remains minus
-ANSWER_RESERVE; if it stops on max_tokens, exactly one forcing call follows, with the rest of the
-budget and a strategy-supplied message asking for the final answer.
+`BudgetedModel` is a strategy's only way to reach the model. It holds a sample to its budget
+(redline/budget.py), records every call, and does budget forcing as in s1: a call may spend at
+most what remains minus the reserve; if it stops on max_tokens, exactly one forcing call follows,
+with the rest of the budget and a strategy-supplied message asking for the final answer.
+Reasoning strategies get TOTAL_BUDGET with a 512-token reserve. direct gets only the reserve, in
+one call with forcing off: a reply cut off there is an overrun, not something to force.
 """
 
 from collections.abc import Awaitable, Callable, Sequence
@@ -46,11 +47,16 @@ class CallRecord(BaseModel):
 
 class BudgetedModel:
     def __init__(
-        self, generate: GenerateFn, total: int = TOTAL_BUDGET, reserve: int = ANSWER_RESERVE
+        self,
+        generate: GenerateFn,
+        total: int = TOTAL_BUDGET,
+        reserve: int = ANSWER_RESERVE,
+        forcing: bool = True,
     ) -> None:
         self._generate = generate
         self.total = total
         self.reserve = reserve
+        self.forcing = forcing
         self.used = 0
         self.calls: list[CallRecord] = []
         self.conversation: list[ChatMessage] = []  # the last call's input plus its output
@@ -62,11 +68,11 @@ class BudgetedModel:
     async def generate(
         self, messages: Sequence[ChatMessage], *, forcing_message: str
     ) -> ModelOutput:
-        """One reasoning call, plus one forcing call if it stops on max_tokens."""
+        """One call, plus one forcing call if it stops on max_tokens and forcing is on."""
         if self.remaining <= self.reserve:
             raise BudgetExhausted(f"{self.remaining} tokens left, all held for a forced answer")
         output = await self._call(list(messages), self.remaining - self.reserve, forcing=False)
-        if output.stop_reason != "max_tokens" or self.remaining == 0:
+        if not self.forcing or output.stop_reason != "max_tokens" or self.remaining == 0:
             return output
         forced = [*messages, output.message, ChatMessageUser(content=forcing_message)]
         return await self._call(forced, self.remaining, forcing=True)

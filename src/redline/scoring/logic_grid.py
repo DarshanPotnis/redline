@@ -124,6 +124,7 @@ def grade(parsed: Grid | ParseError, solution: Solution, clues: Sequence[Clue]) 
         "truncated": [mean()],
         "context_limited": [mean()],
         "forced_answer": [mean()],
+        "direct_overrun": [mean()],
     }
 )
 def grid_verifier() -> Scorer:

@@ -31,7 +31,8 @@ SELECT generator, model, strategy, level,
        avg(format_ok::DOUBLE) FILTER (WHERE NOT context_limited) AS format_ok,
        avg(forced_answer::DOUBLE) FILTER (WHERE NOT context_limited) AS forced_answer,
        avg(output_tokens) FILTER (WHERE NOT context_limited) AS output_tokens,
-       avg(seconds) FILTER (WHERE NOT context_limited) AS seconds
+       avg(seconds) FILTER (WHERE NOT context_limited) AS seconds,
+       avg(direct_overrun::DOUBLE) FILTER (WHERE NOT context_limited) AS direct_overrun
 FROM read_parquet($path)
 GROUP BY generator, model, strategy, level
 """
@@ -51,11 +52,13 @@ GROUP BY generator, model, strategy
 
 # Strategy fidelity: direct answers without reasoning, so its median output stays short. Logic-grid
 # direct writes about 70 tokens; pilot-1f's knights-and-knaves direct wrote 2,000-3,600, i.e. it
-# reasoned, which makes "direct" mean different things on different families.
+# reasoned, which makes "direct" mean different things on different families. Since 1f.1 direct
+# has only the 512-token reserve, so the main signal is how often it overruns that.
 FIDELITY_LIMIT = 300
 
 _FIDELITY = """
-SELECT generator, model, median(output_tokens) AS median_tokens, count(*) AS samples
+SELECT generator, model, median(output_tokens) AS median_tokens, count(*) AS samples,
+       avg(direct_overrun::DOUBLE) AS overrun
 FROM read_parquet($path)
 WHERE strategy = 'direct'
 GROUP BY generator, model
@@ -114,6 +117,7 @@ class LevelRow:
     forced_answer: float | None
     output_tokens: float | None
     seconds: float | None
+    direct_overrun: float | None = None  # direct only: share of replies cut off at the reserve
 
     @property
     def solved_rate(self) -> float | None:
@@ -145,16 +149,19 @@ class HealthRow:
 
 @dataclass(frozen=True)
 class FidelityRow:
-    """Direct's median output per (generator, model)."""
+    """Direct's fidelity per (generator, model): how often its single answer-only call ran out
+    (the main signal, since 1f.1 direct cannot reason past the reserve) and its median output."""
 
     generator: str
     model: str
     median_tokens: float | None
     samples: int
+    overrun: float | None = None
 
     @property
     def flagged(self) -> bool:
-        return self.median_tokens is not None and self.median_tokens > FIDELITY_LIMIT
+        long = self.median_tokens is not None and self.median_tokens > FIDELITY_LIMIT
+        return long or (self.overrun or 0.0) > 0
 
 
 def fidelity_rows(parquet: Path, models: Sequence[str]) -> list[FidelityRow]:

@@ -121,6 +121,7 @@ def test_the_metrics_follow_the_logic_grid_conventions(run: Run) -> None:
         "truncated",
         "context_limited",
         "forced_answer",
+        "direct_overrun",
     }
 
 

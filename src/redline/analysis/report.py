@@ -132,7 +132,11 @@ def _run_table(manifest: Manifest) -> list[str]:
             f"levels {_span(config.levels)}, {config.n_seeds} seeds per level; a climb stops "
             f"after {config.early_stop} consecutive levels with nothing solved",
         ),
-        ("Budget", f"{TOTAL_BUDGET:,} output tokens per sample ({ANSWER_RESERVE} reserve)"),
+        (
+            "Budget",
+            f"reasoning strategies {TOTAL_BUDGET:,} output tokens per sample ({ANSWER_RESERVE} "
+            f"reserve); direct {ANSWER_RESERVE} in one call",
+        ),
         (
             "Runtime",
             f"{_duration(manifest.runtime_seconds())} over {sessions} "
@@ -168,7 +172,7 @@ def _level_table(levels: Sequence[LevelRow], generator: str) -> list[str]:
     title = secondary(generator).title
     header = (
         f"| Generator | Model | Strategy | Level | Size | n | Ctx-lim. | Solved | 95% CI | {title} "
-        "| Chance | Format OK | Forced | Out tokens | Seconds |"
+        "| Chance | Format OK | Forced | Overrun | Out tokens | Seconds |"
     )
     lines = [header, _rule(header)]
     source = get_generator(generator)
@@ -191,6 +195,7 @@ def _level_table(levels: Sequence[LevelRow], generator: str) -> list[str]:
                     _percent(row.chance),
                     _percent(row.format_ok),
                     _percent(row.forced_answer),
+                    _percent(row.direct_overrun),
                     _number(row.output_tokens),
                     _number(row.seconds),
                 ]
@@ -234,12 +239,13 @@ def _fidelity_lines(fidelity: Sequence[FidelityRow]) -> list[str]:
     if not fidelity:
         return ["- Strategy fidelity: no direct runs to check."]
     return [
-        f"- Strategy fidelity: direct should answer without reasoning (median output at most "
-        f"{FIDELITY_LIMIT} tokens).",
+        "- Strategy fidelity: direct answers without reasoning in one call capped at the "
+        f"{ANSWER_RESERVE}-token reserve. Overrun is the share of replies cut off there (the "
+        f"main signal); the median output should also stay at most {FIDELITY_LIMIT} tokens.",
         *(
-            f"  - {_short(row.model)} on {row.generator.removeprefix('reasoning_gym/')}: "
-            f"{_number(row.median_tokens)} tokens over {row.samples} samples, "
-            + ("**FLAG**" if row.flagged else "ok")
+            f"  - {_short(row.model)} on {row.generator.removeprefix('reasoning_gym/')}: overrun "
+            f"{_percent(row.overrun)}, median {_number(row.median_tokens)} tokens over "
+            f"{row.samples} samples, " + ("**FLAG**" if row.flagged else "ok")
             for row in fidelity
         ),
     ]
@@ -265,8 +271,8 @@ def _health_section(
         "- Errored cells: " + ("; ".join(errored) if errored else "none."),
         *_fidelity_lines(fidelity),
         "- Format OK, forced answer and truncated are shares of the samples that were not "
-        "context-limited. A forced answer means the reasoning call hit its cap and the "
-        "reserve forced a final answer.",
+        "context-limited. A forced answer means a reasoning call hit its cap and the reserve "
+        "forced a final answer; direct is never forced (it overruns instead).",
         "",
         header,
         _rule(header),

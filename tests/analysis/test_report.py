@@ -85,14 +85,23 @@ def test_tick_labels_wrap_long_sizes() -> None:
 
 
 def test_strategy_fidelity_is_reported(built: Built) -> None:
-    # The mock's direct writes 120 tokens a call (two calls of 100 when forced): median 120.
-    assert "- Strategy fidelity: direct should answer without reasoning" in built.markdown
-    assert "  - model on logic_grid: 120 tokens over 6 samples, ok" in built.markdown
+    # The mock's direct writes 120 tokens (100 when the context window cuts it off): median 120,
+    # and no reply ran into the 512-token cap.
+    assert "- Strategy fidelity: direct answers without reasoning" in built.markdown
+    assert "  - model on logic_grid: overrun 0%, median 120 tokens over 6 samples, ok" in (
+        built.markdown
+    )
     [row] = fidelity_rows(built.paths.parquet, MODELS)
-    assert (row.median_tokens, row.flagged) == (120, False)
+    assert (row.median_tokens, row.overrun, row.flagged) == (120, 0.0, False)
 
 
-@pytest.mark.parametrize(("tokens", "flagged"), [(300, False), (301, True), (None, False)])
-def test_direct_above_the_limit_is_flagged(tokens: float | None, flagged: bool) -> None:
+@pytest.mark.parametrize(
+    ("tokens", "overrun", "flagged"),
+    [(300, 0.0, False), (301, 0.0, True), (None, None, False), (120, 1 / 3, True)],
+)
+def test_direct_that_runs_long_or_overruns_is_flagged(
+    tokens: float | None, overrun: float | None, flagged: bool
+) -> None:
     assert FIDELITY_LIMIT == 300
-    assert FidelityRow("reasoning_gym/knights_knaves", "m", tokens, 3).flagged is flagged
+    row = FidelityRow("reasoning_gym/knights_knaves", "m", tokens, 3, overrun)
+    assert row.flagged is flagged

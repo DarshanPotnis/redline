@@ -35,6 +35,6 @@ def test_a_restart_reuses_every_complete_log(mock_run: MockRun) -> None:
 
 def test_each_sample_was_asked_once_per_strategy(mock_run: MockRun) -> None:
     counts = Counter(mock_run.calls)
-    # one call per sample and strategy; the context-limited direct sample adds a forcing call
-    assert counts[CONTEXT_LIMITED] == 3
+    # one call per sample and strategy: direct is never forced, even when cut off
+    assert counts[CONTEXT_LIMITED] == 2
     assert {count for sample, count in counts.items() if sample != CONTEXT_LIMITED} == {2}

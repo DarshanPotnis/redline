@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -130,7 +131,9 @@ def test_every_sample_is_solved_and_scored(run: Run) -> None:
     assert {sample.id for sample in run.log.samples} == set(run.samples)
     for sample in run.log.samples:
         assert sample.scores is not None
-        assert sample.scores["grid_verifier"].value == {
+        value = dict(sample.scores["grid_verifier"].value)
+        overrun = value.pop("direct_overrun")
+        assert value == {
             "format_ok": 1.0,
             "valid_grid": 1.0,
             "solved": 1.0,
@@ -139,6 +142,8 @@ def test_every_sample_is_solved_and_scored(run: Run) -> None:
             "context_limited": 0.0,
             "forced_answer": 0.0,
         }
+        # direct's fidelity signal; NaN ("not scored") for every other strategy
+        assert overrun == 0.0 if run.strategy == "direct" else math.isnan(overrun)
     assert run.log.results is not None
     solved = next(score for score in run.log.results.scores if score.name == "solved")
     assert solved.metrics["accuracy"].value == 1.0
@@ -163,8 +168,10 @@ def test_every_call_comes_from_the_public_puzzle_and_earlier_outputs(run: Run) -
 def test_every_call_gets_the_budget_and_the_profile_sampling(run: Run) -> None:
     expected = MOCK.generate_config()
     assert run.configs
+    # direct is answer-only: one call capped at the reserve. The others: the reasoning cap.
+    cap = ANSWER_RESERVE if run.strategy == "direct" else FIRST_CAP
     for config in run.configs:
-        assert config.max_tokens == FIRST_CAP  # one uncut call: the reasoning cap
+        assert config.max_tokens == cap
         assert (config.temperature, config.top_p) == (expected.temperature, expected.top_p)
     assert run.log.plan.config.max_tokens == TOTAL_BUDGET  # the profile records the budget
 

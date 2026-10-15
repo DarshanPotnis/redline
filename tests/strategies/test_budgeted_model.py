@@ -13,14 +13,16 @@ from inspect_ai.model import (
     get_model,
 )
 
-from redline.budget import ANSWER_RESERVE, TOTAL_BUDGET
+from redline.budget import ANSWER_ONLY, ANSWER_RESERVE, REASONING, TOTAL_BUDGET, Budget
 from redline.strategies.base import BudgetedModel, BudgetExhausted
 
 FORCE = "Out of budget: answer now."
 PROMPT: list[ChatMessage] = [ChatMessageUser(content="Solve the puzzle.")]
 
 
-def scripted(*steps: tuple[str, StopReason, int | None]) -> tuple[BudgetedModel, list[int]]:
+def scripted(
+    *steps: tuple[str, StopReason, int | None], budget: Budget = REASONING
+) -> tuple[BudgetedModel, list[int]]:
     """A BudgetedModel over mockllm that replies with the given (text, stop_reason, tokens)
     steps in order; tokens None means "spend this call's whole cap". Also returns the caps the
     model saw."""
@@ -39,7 +41,13 @@ def scripted(*steps: tuple[str, StopReason, int | None]) -> tuple[BudgetedModel,
         return output.model_copy(update={"usage": usage})
 
     model = get_model("mockllm/model", custom_outputs=respond)
-    return BudgetedModel(lambda messages, config: model.generate(messages, config=config)), caps
+    budgeted = BudgetedModel(
+        lambda messages, config: model.generate(messages, config=config),
+        total=budget.total,
+        reserve=budget.reserve,
+        forcing=budget.forcing,
+    )
+    return budgeted, caps
 
 
 def generate(model: BudgetedModel) -> ModelOutput:
@@ -123,3 +131,14 @@ def test_records_hold_what_the_scorer_needs() -> None:
     )
     assert call.text == "{}"
     assert call.messages == [("user", "Solve the puzzle.")]
+
+
+def test_answer_only_is_one_call_capped_at_the_reserve_and_never_forced() -> None:
+    # direct's budget: the whole sample is the 512-token reserve, in one call.
+    model, caps = scripted(
+        ("Let me reason this through...", "max_tokens", None), budget=ANSWER_ONLY
+    )
+    assert generate(model).stop_reason == "max_tokens"
+    assert caps == [ANSWER_RESERVE] == [512]
+    assert [call.forcing for call in model.calls] == [False]
+    assert model.used == 512 and model.remaining == 0
