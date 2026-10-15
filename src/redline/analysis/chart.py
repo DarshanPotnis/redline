@@ -38,7 +38,10 @@ def points(rows: Sequence[LevelRow], model: str, strategy: str) -> list[LevelRow
 
 
 def level_label(generator: str, level: int) -> str:
-    return f"L{level}\n{get_generator(generator).describe(level)}"
+    """The x tick: level, then its size. A multi-part size ("4p d3 w3") breaks after its first
+    part, so neighbouring ticks don't overlap; "4x3" stays on one line."""
+    size = get_generator(generator).describe(level).replace(" ", "\n", 1)
+    return f"L{level}\n{size}"
 
 
 def ladder_chart(

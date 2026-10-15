@@ -6,7 +6,7 @@ import pytest
 
 from conftest import MockRun
 from redline.analysis import build_report
-from redline.analysis.chart import points
+from redline.analysis.chart import level_label, points
 from redline.analysis.ladder import LevelRow, health_rows, level_rows
 from redline.analysis.report import ReportPaths
 
@@ -70,3 +70,8 @@ def test_the_report_and_chart_are_written(built: Built) -> None:
     assert "| model | direct | L1 2/2, L2 0/2, L3 0/2 | early_stop |" in built.markdown
     assert "Context-limited samples: **1 of 12**" in built.markdown
     assert "| 4 | 4x4 |" not in built.markdown
+
+
+def test_tick_labels_wrap_long_sizes() -> None:
+    assert level_label("logic_grid", 3) == "L3\n4x3"
+    assert level_label("reasoning_gym/knights_knaves", 4) == "L4\n4p\nd3 w3"
