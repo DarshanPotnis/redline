@@ -50,8 +50,9 @@ def test_connection_limits() -> None:
     # Local: one request at a time, so parallel 8k contexts never swap on the 8 GB dev machine.
     for model_id in LOCAL_IDS:
         assert profile_for(model_id).generate_config().max_connections == 1
+    # Groq: one too, since each request reserves its max_tokens against 8,000 tokens per minute.
     for model_id in ("groq/qwen/qwen3.8-27b", "groq/openai/gpt-oss-20b"):
-        assert profile_for(model_id).generate_config().max_connections == 2
+        assert profile_for(model_id).generate_config().max_connections == 1
     assert profile_for("mockllm/model").generate_config().max_connections is None
 
 

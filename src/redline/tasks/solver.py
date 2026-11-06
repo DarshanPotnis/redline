@@ -9,6 +9,7 @@ from inspect_ai.model import ModelOutput, get_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 
 from redline.puzzles.base import PublicPuzzle
+from redline.runtime.retry import retry_rate_limits
 from redline.strategies import budget_for, get_strategy
 from redline.strategies.base import BudgetedModel
 
@@ -21,7 +22,9 @@ def strategy_solver(strategy: str) -> Solver:
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         model = get_model()
         budgeted = BudgetedModel(
-            lambda messages, config: model.generate(messages, config=config),
+            lambda messages, config: retry_rate_limits(
+                lambda: model.generate(messages, config=config)
+            ),
             total=budget.total,
             reserve=budget.reserve,
             forcing=budget.forcing,

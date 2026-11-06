@@ -57,9 +57,10 @@ def profiles() -> dict[str, ModelProfile]:
             model_id="mockllm/model", provider="mockllm", context_window=None, thinking="n/a"
         ),
         # Context windows: console.groq.com/docs/models, read 2026-10-13.
-        # Connections: 2. Groq answers in seconds, so a second connection hides latency, while the
-        # free tier's 8K tokens-per-minute limit (both models' headers, 2026-11-05) caps throughput
-        # anyway; Inspect retries rate-limited requests.
+        # Connections: 1. The free tier allows 8,000 tokens per minute (both models' headers,
+        # 2026-11-05), and Groq reserves each request's max_tokens against it, so a 3,584-token
+        # reasoning call takes about half a minute's quota: a second connection only collides.
+        # 429s are retried by runtime/retry.py (Inspect doesn't, for Groq).
         # The non-reasoning Groq model since 1g.1; llama-3.3-70b-versatile is gone from the free
         # tier (404 model_not_found, 2026-11-05). Qwen 3.8 27B, console.groq.com/docs/model/qwen/
         # qwen3.8-27b, read 2026-11-05: 131,072-token context.
@@ -74,7 +75,7 @@ def profiles() -> dict[str, ModelProfile]:
             provider="groq",
             context_window=131_072,
             thinking="off",
-            max_connections=2,
+            max_connections=1,
             generate={"temperature": 0.7, "top_p": 0.8, "presence_penalty": 1.5, "seed": 0},
         ),
         # Sampling: "We recommend sampling with temperature=1.0 and top_p=1.0" (openai/gpt-oss
@@ -84,7 +85,7 @@ def profiles() -> dict[str, ModelProfile]:
             provider="groq",
             context_window=131_072,
             thinking="on",
-            max_connections=2,
+            max_connections=1,
             generate={"temperature": 1.0, "top_p": 1.0, "seed": 0, "reasoning_effort": "medium"},
         ),
     ]
