@@ -42,7 +42,7 @@ All code lives in `src/redline/`.
 ## Models
 
 - **Local, via Ollama:** `ollama/redline-qwen3.5-0.8b`, `ollama/redline-qwen3.5-2b`, `ollama/redline-qwen3.5-4b`, built by `make ollama-models` from `models/ollama/*.Modelfile`: an 8192-token context and every sampling parameter pinned from the model card's non-thinking settings. Thinking is off per request (`reasoning_effort: "none"` in `extra_body`). The dev machine is an 8 GB M2 MacBook Air: max 4B, one model loaded at a time.
-- **Cloud, via the Groq free tier** (no card on file): `groq/llama-3.3-70b-versatile` and `groq/openai/gpt-oss-20b` (reasoning on; its reasoning tokens count toward the budget), for regular-vs-reasoning comparisons.
+- **Cloud, via the Groq free tier** (no card on file): `groq/qwen/qwen3.8-27b` (non-thinking: Groq's default for it; replaced `llama-3.3-70b-versatile`, which left the free tier, in 1g.1) and `groq/openai/gpt-oss-20b` (reasoning on; its reasoning tokens are part of `completion_tokens` and count against `max_tokens`, verified 1g.1), for regular-vs-reasoning comparisons. Both: 1,000 requests/day and 8,000 tokens/minute per the response headers.
 - Every model is registered in `runtime/profiles.py`. Ollama's OpenAI-compatible API resets `temperature` and `top_p` to 1.0 when a request omits them, so local profiles read both from the Modelfile and send them; the Modelfile stays the single source of truth.
 
 ## Phase plan

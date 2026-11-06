@@ -13,7 +13,7 @@ from redline.runner.manifest import GitState, RunConfig, load
 CLEAN = GitState(sha="a" * 40, dirty=False)
 LOCAL_SMALL = "ollama/redline-qwen3.5-0.8b"
 LOCAL_LARGE = "ollama/redline-qwen3.5-2b"
-API = "groq/llama-3.3-70b-versatile"
+API = "groq/qwen/qwen3.8-27b"
 
 
 class Script:

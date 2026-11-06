@@ -58,16 +58,24 @@ def profiles() -> dict[str, ModelProfile]:
         ),
         # Context windows: console.groq.com/docs/models, read 2026-10-13.
         # Connections: 2. Groq answers in seconds, so a second connection hides latency, while the
-        # free tier's tokens-per-minute limit (8K TPM listed for gpt-oss-20b) caps throughput
+        # free tier's 8K tokens-per-minute limit (both models' headers, 2026-11-05) caps throughput
         # anyway; Inspect retries rate-limited requests.
-        # Sampling: Meta's reference defaults (meta-llama/llama-models, llama3/generation.py).
+        # The non-reasoning Groq model since 1g.1; llama-3.3-70b-versatile is gone from the free
+        # tier (404 model_not_found, 2026-11-05). Qwen 3.8 27B, console.groq.com/docs/model/qwen/
+        # qwen3.8-27b, read 2026-11-05: 131,072-token context.
+        # Thinking: Groq serves it non-thinking by default (checked 2026-11-05: 2 completion
+        # tokens, no reasoning_tokens, with or without reasoning_effort "none"). Inspect's Groq
+        # provider can't send reasoning_effort "none" (it clamps it away) or extra_body, so the
+        # profile relies on that default; every call's logged reasoning_tokens shows it held.
+        # Sampling: the model card's non-thinking settings. top_k=20 can't be sent (Groq rejects
+        # top_k) and min_p=0 is the default.
         ModelProfile(
-            model_id="groq/llama-3.3-70b-versatile",
+            model_id="groq/qwen/qwen3.8-27b",
             provider="groq",
             context_window=131_072,
-            thinking="n/a",
+            thinking="off",
             max_connections=2,
-            generate={"temperature": 0.6, "top_p": 0.9, "seed": 0},
+            generate={"temperature": 0.7, "top_p": 0.8, "presence_penalty": 1.5, "seed": 0},
         ),
         # Sampling: "We recommend sampling with temperature=1.0 and top_p=1.0" (openai/gpt-oss
         # README). Its reasoning tokens are part of the completion, so they count toward the budget.

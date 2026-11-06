@@ -35,7 +35,7 @@ def test_the_registry() -> None:
     assert list(profiles()) == [
         *LOCAL_IDS,
         "mockllm/model",
-        "groq/llama-3.3-70b-versatile",
+        "groq/qwen/qwen3.8-27b",
         "groq/openai/gpt-oss-20b",
     ]
 
@@ -50,7 +50,7 @@ def test_connection_limits() -> None:
     # Local: one request at a time, so parallel 8k contexts never swap on the 8 GB dev machine.
     for model_id in LOCAL_IDS:
         assert profile_for(model_id).generate_config().max_connections == 1
-    for model_id in ("groq/llama-3.3-70b-versatile", "groq/openai/gpt-oss-20b"):
+    for model_id in ("groq/qwen/qwen3.8-27b", "groq/openai/gpt-oss-20b"):
         assert profile_for(model_id).generate_config().max_connections == 2
     assert profile_for("mockllm/model").generate_config().max_connections is None
 
@@ -90,11 +90,16 @@ def test_the_request_turns_thinking_off_and_pins_sampling(model_id: str) -> None
 
 
 def test_groq_profiles_pin_their_sampling() -> None:
-    llama = profile_for("groq/llama-3.3-70b-versatile")
+    qwen = profile_for("groq/qwen/qwen3.8-27b")
     gpt_oss = profile_for("groq/openai/gpt-oss-20b")
-    assert (llama.context_window, llama.thinking) == (131_072, "n/a")
+    assert (qwen.context_window, qwen.thinking) == (131_072, "off")
     assert (gpt_oss.context_window, gpt_oss.thinking) == (131_072, "on")
-    assert llama.generate == {"temperature": 0.6, "top_p": 0.9, "seed": 0}
+    assert qwen.generate == {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "presence_penalty": 1.5,
+        "seed": 0,
+    }
     assert gpt_oss.generate == {
         "temperature": 1.0,
         "top_p": 1.0,
